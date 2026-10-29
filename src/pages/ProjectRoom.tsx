@@ -109,7 +109,7 @@ type RoomTab =
 export function ProjectRoom() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const { user, profile: authProfile } = useAuth();
+  const { user, profile: authProfile, ready } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -167,20 +167,38 @@ export function ProjectRoom() {
   }, [tabParam]);
 
   const loadAll = useCallback(async () => {
-    if (!id || !user) return;
+    if (!id) {
+      setDataLoading(false);
+      return;
+    }
+    if (!ready) {
+      return;
+    }
     try {
-      const [proj, mems, profiles] = await Promise.all([
-        fetchProjectById(id),
+      setDataLoading(true);
+      const proj = await fetchProjectById(id);
+      if (!proj) {
+        setProject(null);
+        setDataLoading(false);
+        return;
+      }
+      setProject(proj);
+
+      if (!user) {
+        setHasAccess(false);
+        setDataLoading(false);
+        return;
+      }
+
+      const [mems, profiles] = await Promise.all([
         fetchProjectMembers(id),
         fetchAllProfiles(),
       ]);
-      if (!proj) { setDataLoading(false); return; }
-      setProject(proj);
       setMembers(mems);
       setAllProfiles(profiles);
 
       // Check access
-      const access = canAccessRoomSync(user.id, id, mems, proj.ownerId);
+      const access = canAccessRoomSync(user.id, id, mems, proj.ownerId) || authProfile?.role === "admin";
       setHasAccess(access);
       if (!access) { setDataLoading(false); return; }
 
@@ -247,7 +265,7 @@ export function ProjectRoom() {
     } finally {
       setDataLoading(false);
     }
-  }, [id, user]);
+  }, [id, user, ready, authProfile?.role]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -356,6 +374,21 @@ export function ProjectRoom() {
     }
   }, [project]);
 
+  const monitoringAnalysis = useMemo(() => {
+    if (!project) return null;
+    return analyzeProjectMonitoring({
+      project,
+      members,
+      memberProfiles: allProfiles,
+      tasks: projectTasks,
+      taskComments,
+      discussions: projectDiscussions,
+      discussionReplies,
+      documents: projectDocs,
+      researchNotes: projectNotes,
+    });
+  }, [project, members, allProfiles, projectTasks, taskComments, projectDiscussions, discussionReplies, projectDocs, projectNotes]);
+
   if (dataLoading) {
     return <div className="flex h-96 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-navy" /></div>;
   }
@@ -389,7 +422,7 @@ export function ProjectRoom() {
     .filter((m: any) => m.status === "active")
     .map((m: any) => {
       const p = allProfiles.find((pr: any) => pr.userId === m.userId);
-      const role = project.roles.find((r: any) => r.id === m.roleId);
+      const role = project.roles?.find((r: any) => r.id === m.roleId);
       return { member: m, profile: p, roleName: role?.name };
     });
 
@@ -409,22 +442,11 @@ export function ProjectRoom() {
   const candidateProfiles = allProfiles.filter(
     (p: any) => p.userId !== user.id && !teamMembers.some((m: any) => m.member.userId === p.userId)
   );
-  const skillGapAnalysis = analyzeSkillGap(project, memberProfiles, candidateProfiles);
-
-  const monitoringAnalysis = useMemo(() => {
-    if (!project) return null;
-    return analyzeProjectMonitoring({
-      project,
-      members,
-      memberProfiles: allProfiles,
-      tasks: projectTasks,
-      taskComments,
-      discussions: projectDiscussions,
-      discussionReplies,
-      documents: projectDocs,
-      researchNotes: projectNotes,
-    });
-  }, [project, members, allProfiles, projectTasks, taskComments, projectDiscussions, discussionReplies, projectDocs, projectNotes]);
+  const skillGapAnalysis = analyzeSkillGap(
+    { ...project, requiredSkills: project.requiredSkills || [], roles: project.roles || [] },
+    memberProfiles,
+    candidateProfiles
+  );
 
   // Handlers — all async, call Supabase, then refresh
   const handleSaveTask = async (e: React.FormEvent) => {
