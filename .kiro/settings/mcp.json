@@ -1,0 +1,13 @@
+
+{
+  "mcpServers": {
+    "supabase": {
+      "type": "http",
+      "url": "https://mcp.supabase.com/mcp?project_ref=mzmhfiaiaflsxkdpfdzl&features=database%2Cdocs%2Cdebugging",
+      "disabled": false,
+      "headers": {
+        "Authorization": "Bearer sbp_fc74b54a785cca214cdce0b203036eb1b51df569"
+      }
+    }
+  }
+}
