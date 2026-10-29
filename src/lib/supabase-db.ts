@@ -531,52 +531,63 @@ export async function fetchAllProfiles(): Promise<Profile[]> {
   // Short-lived in-process cache (60 s) — avoids 5 Supabase queries × every page navigation
   const now = Date.now();
   if (_profileCache && now - _profileCacheAt < 60_000) return _profileCache;
+  if (_profilePromise) return _profilePromise;
 
-  const { data: rows, error } = await supabase!
-    .from("profiles")
-    .select("*")
-    .neq("visibility", "private")
-    .eq("status", "active")
-    .order("full_name");
+  _profilePromise = (async () => {
+    try {
+      const { data: rows, error } = await supabase!
+        .from("profiles")
+        .select("*")
+        .neq("visibility", "private")
+        .eq("status", "active")
+        .order("full_name");
 
-  if (error || !rows) return [];
+      if (error || !rows) return [];
 
-  const ids = rows.map((r: any) => r.id);
-  const [
-    { data: skills },
-    { data: interests },
-    { data: studentProfiles },
-    { data: facultyProfiles },
-  ] = await Promise.all([
-    supabase!.from("user_skills").select("*, skills(name)").in("profile_id", ids),
-    supabase!.from("user_interests").select("*, research_interests(name)").in("profile_id", ids),
-    supabase!.from("student_profiles").select("*").in("profile_id", ids),
-    supabase!.from("faculty_profiles").select("*").in("profile_id", ids),
-  ]);
+      const ids = rows.map((r: any) => r.id);
+      const [
+        { data: skills },
+        { data: interests },
+        { data: studentProfiles },
+        { data: facultyProfiles },
+      ] = await Promise.all([
+        supabase!.from("user_skills").select("*, skills(name)").in("profile_id", ids),
+        supabase!.from("user_interests").select("*, research_interests(name)").in("profile_id", ids),
+        supabase!.from("student_profiles").select("*").in("profile_id", ids),
+        supabase!.from("faculty_profiles").select("*").in("profile_id", ids),
+      ]);
 
-  const result = rows.map((row: any) =>
-    rowToProfile(row, {
-      skills: (skills ?? []).filter((s: any) => s.profile_id === row.id),
-      interests: (interests ?? []).filter((i: any) => i.profile_id === row.id),
-      studentProfile: (studentProfiles ?? []).find((sp: any) => sp.profile_id === row.id) ?? null,
-      facultyProfile: (facultyProfiles ?? []).find((fp: any) => fp.profile_id === row.id) ?? null,
-    })
-  );
+      const result = rows.map((row: any) =>
+        rowToProfile(row, {
+          skills: (skills ?? []).filter((s: any) => s.profile_id === row.id),
+          interests: (interests ?? []).filter((i: any) => i.profile_id === row.id),
+          studentProfile: (studentProfiles ?? []).find((sp: any) => sp.profile_id === row.id) ?? null,
+          facultyProfile: (facultyProfiles ?? []).find((fp: any) => fp.profile_id === row.id) ?? null,
+        })
+      );
 
-  _profileCache = result;
-  _profileCacheAt = Date.now();
-  return result;
+      _profileCache = result;
+      _profileCacheAt = Date.now();
+      return result;
+    } finally {
+      _profilePromise = null;
+    }
+  })();
+
+  return _profilePromise;
 }
 
 /** Bust the in-process profile cache — call after any mutation that changes profile data */
 export function bustProfileCache() {
   _profileCache = null;
   _profileCacheAt = 0;
+  _profilePromise = null;
 }
 
 // Module-level cache for fetchAllProfiles — avoids redundant round trips within a session
 let _profileCache: Profile[] | null = null;
 let _profileCacheAt = 0;
+let _profilePromise: Promise<Profile[]> | null = null;
 
 export async function saveProfile(userId: string, patch: Partial<Profile>) {
   // 1. Update base profiles row
@@ -817,25 +828,52 @@ export async function fetchResearchInterestsFromDB(): Promise<string[]> {
 // PROJECTS
 // ---------------------------------------------------------------------------
 
+// In-process cache and in-flight deduplication for fetchProjects
+let _projectsCache: Project[] | null = null;
+let _projectsCacheAt = 0;
+let _projectsPromise: Promise<Project[]> | null = null;
+
+export function bustProjectsCache() {
+  _projectsCache = null;
+  _projectsCacheAt = 0;
+  _projectsPromise = null;
+}
+
 export async function fetchProjects(): Promise<Project[]> {
-  const { data: rows, error } = await supabase!
-    .from("projects")
-    .select("*")
-    .is("deleted_at", null)
-    .not("status", "in", '("removed","flagged")')
-    .order("created_at", { ascending: false });
+  const now = Date.now();
+  if (_projectsCache && now - _projectsCacheAt < 30_000) return _projectsCache;
+  if (_projectsPromise) return _projectsPromise;
 
-  if (error || !rows) return [];
+  _projectsPromise = (async () => {
+    try {
+      const { data: rows, error } = await supabase!
+        .from("projects")
+        .select("*")
+        .is("deleted_at", null)
+        .not("status", "in", '("removed","flagged")')
+        .order("created_at", { ascending: false });
 
-  const ids = rows.map((r: any) => r.id);
-  const { data: roles } = await supabase!
-    .from("project_roles")
-    .select("*")
-    .in("project_id", ids);
+      if (error || !rows) return [];
 
-  return rows.map((row: any) =>
-    rowToProject(row, (roles ?? []).filter((r: any) => r.project_id === row.id))
-  );
+      const ids = rows.map((r: any) => r.id);
+      const { data: roles } = await supabase!
+        .from("project_roles")
+        .select("*")
+        .in("project_id", ids);
+
+      const result = rows.map((row: any) =>
+        rowToProject(row, (roles ?? []).filter((r: any) => r.project_id === row.id))
+      );
+
+      _projectsCache = result;
+      _projectsCacheAt = Date.now();
+      return result;
+    } finally {
+      _projectsPromise = null;
+    }
+  })();
+
+  return _projectsPromise;
 }
 
 export async function fetchProjectById(id: string): Promise<Project | null> {
@@ -906,6 +944,7 @@ export async function createProject(
   // Activity log
   await logActivity(proj.id, ownerId, "project", "Project published.");
 
+  bustProjectsCache();
   return (await fetchProjectById(proj.id))!;
 }
 
@@ -958,10 +997,12 @@ export async function updateProject(ownerId: string, projectId: string, patch: P
   }
 
   await logActivity(projectId, ownerId, "project", "Project details were updated.");
+  bustProjectsCache();
   return fetchProjectById(projectId);
 }
 
 export async function deleteProject(ownerId: string, projectId: string) {
+  bustProjectsCache();
   const { error } = await supabase!
     .from("projects")
     .update({ deleted_at: new Date().toISOString(), status: "removed" })

@@ -176,13 +176,27 @@ export function ProjectRoom() {
     }
     try {
       setDataLoading(true);
-      const proj = await fetchProjectById(id);
+
+      // STEP 1: Fetch core project, members, profiles, tasks, and milestones IN PARALLEL!
+      // This collapses multiple sequential roundtrips into a single roundtrip (~300ms).
+      const [proj, mems, profiles, tasks, milestones] = await Promise.all([
+        fetchProjectById(id),
+        fetchProjectMembers(id),
+        fetchAllProfiles(),
+        fetchTasks(id),
+        fetchMilestones(id),
+      ]);
+
       if (!proj) {
         setProject(null);
         setDataLoading(false);
         return;
       }
       setProject(proj);
+      setMembers(mems);
+      setAllProfiles(profiles);
+      setProjectTasks(tasks);
+      setProjectMilestones(milestones);
 
       if (!user) {
         setHasAccess(false);
@@ -190,23 +204,19 @@ export function ProjectRoom() {
         return;
       }
 
-      const [mems, profiles] = await Promise.all([
-        fetchProjectMembers(id),
-        fetchAllProfiles(),
-      ]);
-      setMembers(mems);
-      setAllProfiles(profiles);
-
       // Check access
       const access = canAccessRoomSync(user.id, id, mems, proj.ownerId) || authProfile?.role === "admin";
       setHasAccess(access);
-      if (!access) { setDataLoading(false); return; }
+      if (!access) {
+        setDataLoading(false);
+        return;
+      }
 
-      // Load all workspace data in parallel — each fetch is individually resilient;
-      // Promise.allSettled prevents a single failed fetch from blocking the whole room.
-      const settled = await Promise.allSettled([
-        fetchTasks(id),
-        fetchMilestones(id),
+      // UNBLOCK UI IMMEDIATELY! The user sees the project workspace, team members, and tasks instantly.
+      setDataLoading(false);
+
+      // STEP 2: Secondary workspace tab data loads concurrently in the background without blocking the UI.
+      Promise.allSettled([
         fetchResearchNotes(id),
         fetchReferences(id),
         fetchExperiments(id),
@@ -217,52 +227,48 @@ export function ProjectRoom() {
         fetchActivityLogs(id),
         fetchWeeklySubmissions(id),
         fetchTechnicalConsistencyFindings(id),
-      ]);
+        tasks.length > 0
+          ? fetchTaskCommentsByProject(tasks.map((t: any) => t.id)).catch(() => [])
+          : Promise.resolve([]),
+      ]).then(async (settled) => {
+        const getVal = (r: PromiseSettledResult<any[]>): any[] =>
+          r.status === "fulfilled" ? r.value : [];
 
-      const getVal = (r: PromiseSettledResult<any[]>): any[] =>
-        r.status === "fulfilled" ? r.value : [];
+        const notes        = getVal(settled[0] as PromiseSettledResult<any[]>);
+        const refs         = getVal(settled[1] as PromiseSettledResult<any[]>);
+        const exps         = getVal(settled[2] as PromiseSettledResult<any[]>);
+        const meetings     = getVal(settled[3] as PromiseSettledResult<any[]>);
+        const datasets     = getVal(settled[4] as PromiseSettledResult<any[]>);
+        const docs         = getVal(settled[5] as PromiseSettledResult<any[]>);
+        const discussions  = getVal(settled[6] as PromiseSettledResult<any[]>);
+        const activity     = getVal(settled[7] as PromiseSettledResult<any[]>);
+        const subs         = getVal(settled[8] as PromiseSettledResult<any[]>);
+        const findings     = getVal(settled[9] as PromiseSettledResult<any[]>);
+        const allComments  = getVal(settled[10] as PromiseSettledResult<any[]>);
 
-      const tasks        = getVal(settled[0] as PromiseSettledResult<any[]>);
-      const milestones   = getVal(settled[1] as PromiseSettledResult<any[]>);
-      const notes        = getVal(settled[2] as PromiseSettledResult<any[]>);
-      const refs         = getVal(settled[3] as PromiseSettledResult<any[]>);
-      const exps         = getVal(settled[4] as PromiseSettledResult<any[]>);
-      const meetings     = getVal(settled[5] as PromiseSettledResult<any[]>);
-      const datasets     = getVal(settled[6] as PromiseSettledResult<any[]>);
-      const docs         = getVal(settled[7] as PromiseSettledResult<any[]>);
-      const discussions  = getVal(settled[8] as PromiseSettledResult<any[]>);
-      const activity     = getVal(settled[9] as PromiseSettledResult<any[]>);
-      const subs         = getVal(settled[10] as PromiseSettledResult<any[]>);
-      const findings     = getVal(settled[11] as PromiseSettledResult<any[]>);
+        setProjectNotes(notes);
+        setProjectReferences(refs);
+        setProjectExperiments(exps);
+        setProjectMeetings(meetings);
+        setProjectDatasets(datasets);
+        setProjectDocs(docs);
+        setProjectDiscussions(discussions);
+        setProjectActivity(activity);
+        setWeeklySubmissions(subs);
+        setConsistencyFindings(findings);
+        setTaskComments(allComments);
 
-      setProjectTasks(tasks);
-      setProjectMilestones(milestones);
-      setProjectNotes(notes);
-      setProjectReferences(refs);
-      setProjectExperiments(exps);
-      setProjectMeetings(meetings);
-      setProjectDatasets(datasets);
-      setProjectDocs(docs);
-      setProjectDiscussions(discussions);
-      setProjectActivity(activity);
-      setWeeklySubmissions(subs);
-      setConsistencyFindings(findings);
-
-      // Load replies for all discussions in one query
-      if (discussions.length > 0) {
-        const discIds = discussions.map((d: any) => d.id);
-        const allReplies = await Promise.all(discIds.map((did: string) => fetchReplies(did).catch(() => [])));
-        setDiscussionReplies(allReplies.flat());
-      }
-
-      // Load comments for all tasks in a single batch query
-      const allComments = tasks.length > 0
-        ? await fetchTaskCommentsByProject(tasks.map((t: any) => t.id)).catch(() => [])
-        : [];
-      setTaskComments(allComments);
+        // Load replies for all discussions in one query
+        if (discussions.length > 0) {
+          const discIds = discussions.map((d: any) => d.id);
+          const allReplies = await Promise.all(
+            discIds.map((did: string) => fetchReplies(did).catch(() => []))
+          );
+          setDiscussionReplies(allReplies.flat());
+        }
+      });
     } catch (err) {
       console.error("[ProjectRoom] loadAll error:", err);
-    } finally {
       setDataLoading(false);
     }
   }, [id, user, ready, authProfile?.role]);
