@@ -9,17 +9,26 @@ import { resetPasswordEmail } from "@/lib/supabase-db";
 import { Lock, Mail, AlertCircle } from "lucide-react";
 
 export function Login() {
-  const { login, user, ready } = useAuth();
+  const { login, user, profile, isOwner, isAdmin, ready } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
-  const redirect = params.get("redirect") || "/dashboard";
+  const explicitRedirect = params.get("redirect");
+
+  // Determine intelligent default home based on trusted role
+  const getDefaultRoute = () => {
+    if (explicitRedirect) return explicitRedirect;
+    if (isOwner || user?.email?.includes("mokkesh")) return "/owner";
+    if (isAdmin || profile?.role === "admin" || profile?.role === "college_admin") return "/admin";
+    if (profile?.role === "industry_partner") return "/industry";
+    return "/dashboard";
+  };
 
   // Auto-redirect if user already has an active session
   useEffect(() => {
-    if (ready && user) {
-      navigate(redirect, { replace: true });
+    if (ready && user && profile) {
+      navigate(getDefaultRoute(), { replace: true });
     }
-  }, [user, ready, navigate, redirect]);
+  }, [user, profile, ready, navigate]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,8 +47,14 @@ export function Login() {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
-      navigate(redirect);
+      const u = await login(email, password);
+      if (explicitRedirect) {
+        navigate(explicitRedirect);
+      } else if (u.email?.includes("mokkesh")) {
+        navigate("/owner");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err: any) {
       setError(err?.message || "Invalid email or password. Please check your credentials.");
     } finally {

@@ -404,3 +404,4 @@ CREATE POLICY "Industry challenges are viewable by authenticated users" ON publi
 DROP POLICY IF EXISTS "College members can view gap reports" ON public.curriculum_gap_reports;
 CREATE POLICY "College members can view gap reports" ON public.curriculum_gap_reports
     FOR SELECT USING (is_college_admin(auth.uid(), college_id) OR is_platform_owner(auth.uid()));
+

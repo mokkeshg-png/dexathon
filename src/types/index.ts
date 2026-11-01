@@ -1,4 +1,4 @@
-export type PlatformRole = "student" | "faculty" | "admin";
+export type PlatformRole = "student" | "faculty" | "admin" | "college_admin" | "staff" | "owner" | "industry_partner";
 export type AccountStatus = "active" | "suspended" | "deleted";
 export type Proficiency = "beginner" | "intermediate" | "advanced";
 export type ProfileVisibility = "public" | "members" | "institution" | "private";
@@ -231,6 +231,8 @@ export interface Profile {
   userId: string;
   email: string;
   role: PlatformRole;
+  collegeId?: string;
+  status?: AccountStatus;
   fullName: string;
   headline?: string;
   coverPhotoUrl?: string;

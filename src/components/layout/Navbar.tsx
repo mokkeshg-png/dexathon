@@ -21,10 +21,14 @@ import {
   MessageSquare,
   PlusCircle,
   Zap,
+  Layers,
+  Activity,
+  CreditCard,
+  Building2,
 } from "lucide-react";
 
 export function Navbar() {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, isOwner, isCollegeAdmin, logout } = useAuth();
   const { items, unread, markRead, markAll } = useNotifications();
   const navigate = useNavigate();
   const location = useLocation();
@@ -60,13 +64,31 @@ export function Navbar() {
       ];
     }
 
-    if (role === "admin") {
+    if (isOwner || role === "owner") {
       return [
-        { name: "Admin Console", href: "/admin", icon: Shield },
-        { name: "Projects Directory", href: "/projects", icon: Briefcase },
+        { name: "Owner Overview", href: "/owner", icon: Shield },
+        { name: "Colleges", href: "/owner/colleges", icon: Building2 },
+        { name: "Subscriptions", href: "/owner/subscriptions", icon: Layers },
+        { name: "Revenue Ledger", href: "/owner/revenue", icon: CreditCard },
+        { name: "Monitoring", href: "/owner/monitoring", icon: Activity },
+      ];
+    }
+
+    if (role === "admin" || role === "college_admin" || isCollegeAdmin) {
+      return [
+        { name: "College Admin", href: "/admin", icon: Shield },
+        { name: "Campus Projects", href: "/projects", icon: Briefcase },
         { name: "Student Directory", href: "/collaborators", icon: Users },
-        { name: "System Messages", href: "/messages", icon: MessageSquare },
-        { name: "Search", href: "/search", icon: Search },
+        { name: "Curriculum Gap", href: "/curriculum", icon: Zap },
+        { name: "Messages", href: "/messages", icon: MessageSquare },
+      ];
+    }
+
+    if (role === "industry_partner") {
+      return [
+        { name: "Innovation Challenges", href: "/industry", icon: Briefcase },
+        { name: "Campus Projects", href: "/projects", icon: Compass },
+        { name: "Messages", href: "/messages", icon: MessageSquare },
       ];
     }
 
@@ -80,6 +102,14 @@ export function Navbar() {
       ];
     }
 
+    if (role === "staff") {
+      return [
+        { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+        { name: "Campus Projects", href: "/projects", icon: Briefcase },
+        { name: "Messages", href: "/messages", icon: MessageSquare },
+      ];
+    }
+
     return [
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { name: "Discover Projects", href: "/projects", icon: Compass },
@@ -87,7 +117,7 @@ export function Navbar() {
       { name: "My Teams & Requests", href: "/requests", icon: Inbox },
       { name: "Messages", href: "/messages", icon: MessageSquare },
     ];
-  }, [user, role]);
+  }, [user, role, isOwner, isCollegeAdmin]);
 
   const isActiveRoute = (path: string) => {
     if (path === "/projects" && location.pathname.startsWith("/projects") && location.pathname !== "/projects/new") {

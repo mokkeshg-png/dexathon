@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 import { Navbar } from "./components/layout/Navbar";
 import { Footer } from "./components/layout/Footer";
 import { Landing } from "./pages/Landing";
@@ -72,33 +73,40 @@ export default function App() {
           <Navbar />
           <main className="flex-1">
             <Routes>
+              {/* Public Discovery Routes */}
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-              <Route path="/onboarding" element={<Onboarding />} />
-              <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/projects" element={<Projects />} />
-              <Route path="/projects/new" element={<ProjectCreate />} />
               <Route path="/projects/:id" element={<ProjectDetail />} />
-              <Route path="/projects/:id/room" element={<ProjectRoom />} />
               <Route path="/collaborators" element={<Collaborators />} />
               <Route path="/search" element={<Search />} />
-              <Route path="/requests" element={<Requests />} />
-              <Route path="/messages" element={<Messages />} />
-              <Route path="/notifications" element={<Notifications />} />
-              <Route path="/profile" element={<Profile />} />
               <Route path="/profile/:id" element={<Profile />} />
-              <Route path="/admin" element={<Admin />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/industry" element={<IndustryBridge />} />
-              <Route path="/curriculum" element={<CurriculumEvolution />} />
-              <Route path="/recovery" element={<KnowledgeRecovery />} />
-              <Route path="/owner" element={<OwnerOverview />} />
-              <Route path="/owner/colleges" element={<OwnerColleges />} />
-              <Route path="/owner/subscriptions" element={<OwnerSubscriptions />} />
-              <Route path="/owner/revenue" element={<OwnerRevenue />} />
-              <Route path="/owner/monitoring" element={<OwnerMonitoring />} />
-              <Route path="/owner/settings" element={<OwnerSettings />} />
+
+              {/* Authenticated Workspace Routes */}
+              <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/projects/new" element={<ProtectedRoute allowedRoles={["student", "faculty", "admin", "college_admin", "owner"]}><ProjectCreate /></ProtectedRoute>} />
+              <Route path="/projects/:id/room" element={<ProtectedRoute><ProjectRoom /></ProtectedRoute>} />
+              <Route path="/requests" element={<ProtectedRoute><Requests /></ProtectedRoute>} />
+              <Route path="/messages" element={<ProtectedRoute><Messages /></ProtectedRoute>} />
+              <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+              <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+              <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="/industry" element={<ProtectedRoute><IndustryBridge /></ProtectedRoute>} />
+              <Route path="/curriculum" element={<ProtectedRoute allowedRoles={["faculty", "college_admin", "admin", "owner"]}><CurriculumEvolution /></ProtectedRoute>} />
+              <Route path="/recovery" element={<ProtectedRoute allowedRoles={["student", "faculty", "admin", "owner"]}><KnowledgeRecovery /></ProtectedRoute>} />
+
+              {/* College Admin Console */}
+              <Route path="/admin" element={<ProtectedRoute requireAdmin><Admin /></ProtectedRoute>} />
+
+              {/* SaaS Platform Owner Console */}
+              <Route path="/owner" element={<ProtectedRoute requireOwner><OwnerOverview /></ProtectedRoute>} />
+              <Route path="/owner/colleges" element={<ProtectedRoute requireOwner><OwnerColleges /></ProtectedRoute>} />
+              <Route path="/owner/subscriptions" element={<ProtectedRoute requireOwner><OwnerSubscriptions /></ProtectedRoute>} />
+              <Route path="/owner/revenue" element={<ProtectedRoute requireOwner><OwnerRevenue /></ProtectedRoute>} />
+              <Route path="/owner/monitoring" element={<ProtectedRoute requireOwner><OwnerMonitoring /></ProtectedRoute>} />
+              <Route path="/owner/settings" element={<ProtectedRoute requireOwner><OwnerSettings /></ProtectedRoute>} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </main>

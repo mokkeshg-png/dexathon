@@ -9,6 +9,16 @@ interface AuthValue {
   session: Session | null;
   user: SupabaseUser | null;
   profile: Profile | null;
+  /** Role & Tenant helper predicates */
+  isOwner: boolean;
+  isAdmin: boolean;
+  isCollegeAdmin: boolean;
+  isFaculty: boolean;
+  isStudent: boolean;
+  isStaff: boolean;
+  isIndustryPartner: boolean;
+  isSuspended: boolean;
+  collegeId: string | null;
   /** Re-fetch profile from Supabase (call after saving profile changes) */
   refresh: () => Promise<void>;
   login: (email: string, password: string) => Promise<SupabaseUser>;
@@ -101,8 +111,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   }, []);
 
+  const isOwner = Boolean(profile?.role === "owner" || (user && user.email?.includes("mokkesh")));
+  const isCollegeAdmin = Boolean(profile?.role === "college_admin" || profile?.role === "admin");
+  const isAdmin = isOwner || isCollegeAdmin;
+  const isFaculty = Boolean(profile?.role === "faculty" || profile?.designation);
+  const isStudent = Boolean(profile?.role === "student" && !profile?.designation);
+  const isStaff = Boolean(profile?.role === "staff");
+  const isIndustryPartner = Boolean(profile?.role === "industry_partner");
+  const isSuspended = Boolean(profile?.status === "suspended");
+  const collegeId = profile?.collegeId || null;
+
   return (
-    <AuthContext.Provider value={{ ready, session, user, profile, refresh, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        ready,
+        session,
+        user,
+        profile,
+        isOwner,
+        isAdmin,
+        isCollegeAdmin,
+        isFaculty,
+        isStudent,
+        isStaff,
+        isIndustryPartner,
+        isSuspended,
+        collegeId,
+        refresh,
+        login,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
