@@ -2384,6 +2384,32 @@ export async function analyzeProjectFit(
   userProfile?: Profile | null,
   candidateProject?: Project | null
 ): Promise<AiAnalysisRecord | null> {
+  // 1. First attempt to call the Gemini AI Supabase Edge Function
+  try {
+    const { data: edgeData, error: edgeErr } = await supabase!.functions.invoke("analyze-project-fit", {
+      body: { project_id: projectId },
+    });
+
+    if (!edgeErr && edgeData?.success && edgeData?.analysis) {
+      const a = edgeData.analysis;
+      return {
+        id: a.id ?? "",
+        type: a.type ?? "compatibility",
+        project_id: a.project_id ?? projectId,
+        user_id: a.user_id ?? "",
+        input_context: a.input_context ?? {},
+        output_result: a.output_result ?? {},
+        model_used: a.model_used ?? "gemini-2.5-flash",
+        confidence: a.confidence ?? "medium",
+        created_at: a.created_at ?? new Date().toISOString(),
+        expires_at: a.expires_at ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+    }
+  } catch (edgeErr) {
+    console.warn("analyze-project-fit Edge Function unavailable, proceeding with deterministic fallback:", edgeErr);
+  }
+
+  // 2. Deterministic evidence-based fallback
   try {
     const project = candidateProject || (await fetchProjectById(projectId));
     if (!project) return null;

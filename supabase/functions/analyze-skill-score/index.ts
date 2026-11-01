@@ -36,6 +36,8 @@ import { withSupabase } from "npm:@supabase/server";
 // ── Constants ──────────────────────────────────────────────────────────────
 
 const ENGINE_VERSION = "skill-engine-v1";
+const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -43,6 +45,85 @@ const CORS_HEADERS = {
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+
+// ── Gemini AI Qualitative Analysis ─────────────────────────────────────────
+
+async function generateGeminiSkillInsights(
+  fullName: string,
+  overallScore: number,
+  skills: any[],
+  pastProjects: any[],
+  internships: any[],
+  certifications: any[]
+): Promise<{ summary?: string; strengths?: string[]; improvementAreas?: string[] } | null> {
+  if (!GEMINI_API_KEY) return null;
+
+  const prompt = `You are an academic skill assessment advisor on SYNAPTRA.
+Evaluate this student's verified profile evidence:
+Student: ${fullName}
+Computed Evidence-Based Skill Score: ${overallScore}/100
+Claimed Skills: ${skills.map((s: any) => s.skills?.name ?? s.name ?? "").filter(Boolean).join(", ")}
+Past Projects: ${pastProjects.map((p: any) => p.title).filter(Boolean).join("; ")}
+Internships: ${internships.map((i: any) => \`\${i.role} at \${i.organization}\`).filter(Boolean).join("; ")}
+Certifications: ${certifications.map((c: any) => c.name).filter(Boolean).join("; ")}
+
+Return ONLY a valid JSON object matching this structure:
+{
+  "summary": "1-2 sentence evidence-grounded summary of the student's technical readiness and core competencies",
+  "strengths": ["3 key demonstrated technical strengths supported by evidence"],
+  "improvementAreas": ["2 actionable recommendations to strengthen portfolio"]
+}`;
+
+  const modelsToTry = Array.from(new Set([GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]));
+
+  for (const model of modelsToTry) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    try {
+      const response = await fetch(
+        \`https://generativelanguage.googleapis.com/v1beta/models/\${encodeURIComponent(model)}:generateContent\`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY,
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: "application/json",
+            },
+          }),
+          signal: controller.signal,
+        }
+      );
+
+      if (!response.ok) {
+        continue;
+      }
+
+      const data = await response.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (typeof rawText === "string") {
+        const parsed = JSON.parse(rawText);
+        if (parsed && typeof parsed.summary === "string") {
+          return {
+            summary: parsed.summary,
+            strengths: Array.isArray(parsed.strengths) ? parsed.strengths : undefined,
+            improvementAreas: Array.isArray(parsed.improvementAreas) ? parsed.improvementAreas : undefined,
+          };
+        }
+      }
+    } catch {
+      // try next model
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  return null;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -438,7 +519,7 @@ interface SkillScoreAnalysis {
   modelVersion: string;
 }
 
-function computeScore(
+async function computeScore(
   profile: any,
   studentProfile: any,
   skills: any[],
@@ -448,7 +529,7 @@ function computeScore(
   publications: any[],
   certifications: any[],
   githubPublicRepos?: number
-): SkillScoreAnalysis {
+): Promise<SkillScoreAnalysis> {
   const githubConnected: boolean = profile.github_connected ?? false;
   const githubUsername: string | undefined = profile.github_username ?? undefined;
   const resumeUrl: string | undefined = profile.resume_url ?? undefined;
@@ -480,9 +561,27 @@ function computeScore(
   const rawTotal = Object.values(breakdown).reduce((a, b) => a + b, 0);
   const overallScore = clamp(rawTotal);
 
-  const strengths = buildStrengths(pastProjects, internships, certifications, publications, githubConnected, resumeUrl, skillItems, breakdown);
-  const improvementAreas = buildImprovements(pastProjects, internships, certifications, githubConnected, githubUsername, resumeUrl, skillItems);
-  const summary = buildSummary(profile.full_name ?? "", overallScore, skillItems, pastProjects, githubConnected, certifications);
+  let strengths = buildStrengths(pastProjects, internships, certifications, publications, githubConnected, resumeUrl, skillItems, breakdown);
+  let improvementAreas = buildImprovements(pastProjects, internships, certifications, githubConnected, githubUsername, resumeUrl, skillItems);
+  let summary = buildSummary(profile.full_name ?? "", overallScore, skillItems, pastProjects, githubConnected, certifications);
+  let modelVersion = ENGINE_VERSION;
+
+  // Enhance with Gemini AI if GEMINI_API_KEY is configured
+  const aiInsights = await generateGeminiSkillInsights(
+    profile.full_name ?? "",
+    overallScore,
+    skills,
+    pastProjects,
+    internships,
+    certifications
+  );
+
+  if (aiInsights) {
+    if (aiInsights.summary) summary = aiInsights.summary;
+    if (aiInsights.strengths && aiInsights.strengths.length > 0) strengths = aiInsights.strengths;
+    if (aiInsights.improvementAreas && aiInsights.improvementAreas.length > 0) improvementAreas = aiInsights.improvementAreas;
+    modelVersion = `${GEMINI_MODEL} + ${ENGINE_VERSION}`;
+  }
 
   const evidenceCount =
     pastProjects.length +
@@ -505,7 +604,7 @@ function computeScore(
     summary,
     confidence,
     analyzedAt: new Date().toISOString(),
-    modelVersion: ENGINE_VERSION,
+    modelVersion,
   };
 }
 
@@ -614,7 +713,7 @@ export default {
         ).filter(Boolean);
 
         // ── 4. Compute skill score ──────────────────────────────────────
-        const analysis = computeScore(
+        const analysis = await computeScore(
           profile,
           studentProfileRes.data,
           skillsRes.data ?? [],

@@ -3,7 +3,7 @@ import { withSupabase } from "npm:@supabase/server";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
 const GEMINI_MODEL =
-  Deno.env.get("GEMINI_MODEL") ?? "gemini-3.7-flash";
+  Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
 
 const MAX_STRING_LENGTH = 3000;
 const MAX_ARRAY_ITEMS = 50;
@@ -214,227 +214,235 @@ STUDENT AND PROJECT DATA:
 ${JSON.stringify(inputContext)}
 `;
 
-  const controller = new AbortController();
+  const modelsToTry = Array.from(new Set([GEMINI_MODEL, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]));
+  let lastError: Error | null = null;
 
-  const timeout = setTimeout(() => {
-    controller.abort();
-  }, 30_000);
-
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
-        GEMINI_MODEL,
-      )}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": GEMINI_API_KEY,
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              parts: [
-                {
-                  text: prompt,
-                },
-              ],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.2,
-            responseMimeType: "application/json",
-            responseSchema: {
-              type: "object",
-              additionalProperties: false,
-              properties: {
-                match_score: {
-                  type: "integer",
-                  minimum: 0,
-                  maximum: 100,
-                  description:
-                    "Overall student-project compatibility score.",
-                },
-
-                summary: {
-                  type: "string",
-                  description:
-                    "Short explanation of the overall fit.",
-                },
-
-                confidence: {
-                  type: "string",
-                  enum: [
-                    "high",
-                    "medium",
-                    "low",
-                  ],
-                  description:
-                    "Confidence in the analysis based on the amount and quality of evidence.",
-                },
-
-                strengths: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-                    properties: {
-                      category: {
-                        type: "string",
-                      },
-                      evidence: {
-                        type: "string",
-                      },
-                      impact: {
-                        type: "string",
-                      },
-                    },
-                    required: [
-                      "category",
-                      "evidence",
-                      "impact",
-                    ],
-                  },
-                },
-
-                gaps: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-                    properties: {
-                      category: {
-                        type: "string",
-                      },
-                      gap: {
-                        type: "string",
-                      },
-                      severity: {
-                        type: "string",
-                        enum: [
-                          "low",
-                          "medium",
-                          "high",
-                        ],
-                      },
-                      evidence: {
-                        type: "string",
-                      },
-                    },
-                    required: [
-                      "category",
-                      "gap",
-                      "severity",
-                      "evidence",
-                    ],
-                  },
-                },
-
-                recommendations: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    additionalProperties: false,
-                    properties: {
-                      priority: {
-                        type: "string",
-                        enum: [
-                          "low",
-                          "medium",
-                          "high",
-                        ],
-                      },
-                      action: {
-                        type: "string",
-                      },
-                      reason: {
-                        type: "string",
-                      },
-                    },
-                    required: [
-                      "priority",
-                      "action",
-                      "reason",
-                    ],
-                  },
-                },
-              },
-              required: [
-                "match_score",
-                "summary",
-                "confidence",
-                "strengths",
-                "gaps",
-                "recommendations",
-              ],
-            },
-          },
-        }),
-        signal: controller.signal,
-      },
-    );
-
-    const responseText = await response.text();
-
-    if (!response.ok) {
-      console.error(
-        "Gemini API error:",
-        response.status,
-        responseText.slice(0, 2000),
-      );
-
-      throw new Error(
-        `Gemini API request failed with status ${response.status}.`,
-      );
-    }
-
-    let geminiData: JsonRecord;
+  for (const model of modelsToTry) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 30_000);
 
     try {
-      geminiData = JSON.parse(responseText);
-    } catch {
-      throw new Error(
-        "Gemini API returned invalid JSON.",
-      );
-    }
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+          model,
+        )}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY,
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: prompt,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  match_score: {
+                    type: "integer",
+                    minimum: 0,
+                    maximum: 100,
+                    description:
+                      "Overall student-project compatibility score.",
+                  },
 
-    const text =
-      (
-        geminiData.candidates as Array<JsonRecord> | undefined
-      )?.[0]?.content &&
-      (
+                  summary: {
+                    type: "string",
+                    description:
+                      "Short explanation of the overall fit.",
+                  },
+
+                  confidence: {
+                    type: "string",
+                    enum: [
+                      "high",
+                      "medium",
+                      "low",
+                    ],
+                    description:
+                      "Confidence in the analysis based on the amount and quality of evidence.",
+                  },
+
+                  strengths: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        category: {
+                          type: "string",
+                        },
+                        evidence: {
+                          type: "string",
+                        },
+                        impact: {
+                          type: "string",
+                        },
+                      },
+                      required: [
+                        "category",
+                        "evidence",
+                        "impact",
+                      ],
+                    },
+                  },
+
+                  gaps: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        category: {
+                          type: "string",
+                        },
+                        gap: {
+                          type: "string",
+                        },
+                        severity: {
+                          type: "string",
+                          enum: [
+                            "low",
+                            "medium",
+                            "high",
+                          ],
+                        },
+                        evidence: {
+                          type: "string",
+                        },
+                      },
+                      required: [
+                        "category",
+                        "gap",
+                        "severity",
+                        "evidence",
+                      ],
+                    },
+                  },
+
+                  recommendations: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      additionalProperties: false,
+                      properties: {
+                        priority: {
+                          type: "string",
+                          enum: [
+                            "low",
+                            "medium",
+                            "high",
+                          ],
+                        },
+                        action: {
+                          type: "string",
+                        },
+                        reason: {
+                          type: "string",
+                        },
+                      },
+                      required: [
+                        "priority",
+                        "action",
+                        "reason",
+                      ],
+                    },
+                  },
+                },
+                required: [
+                  "match_score",
+                  "summary",
+                  "confidence",
+                  "strengths",
+                  "gaps",
+                  "recommendations",
+                ],
+              },
+            },
+          }),
+          signal: controller.signal,
+        },
+      );
+
+      const responseText = await response.text();
+
+      if (!response.ok) {
+        console.warn(
+          `Gemini API (${model}) failed with status ${response.status}:`,
+          responseText.slice(0, 500),
+        );
+        lastError = new Error(
+          `Gemini API request (${model}) failed with status ${response.status}.`,
+        );
+        continue;
+      }
+
+      let geminiData: JsonRecord;
+
+      try {
+        geminiData = JSON.parse(responseText);
+      } catch {
+        lastError = new Error(
+          "Gemini API returned invalid JSON.",
+        );
+        continue;
+      }
+
+      const text =
+        (
+          geminiData.candidates as Array<JsonRecord> | undefined
+        )?.[0]?.content &&
         (
           (
             geminiData.candidates as Array<JsonRecord>
           )[0].content as JsonRecord
         ).parts as Array<JsonRecord> | undefined
-      )?.[0]?.text;
+        )?.[0]?.text;
 
-    if (typeof text !== "string") {
-      console.error(
-        "Unexpected Gemini response:",
-        JSON.stringify(geminiData).slice(0, 4000),
-      );
+      if (typeof text !== "string") {
+        console.error(
+          "Unexpected Gemini response:",
+          JSON.stringify(geminiData).slice(0, 4000),
+        );
+        lastError = new Error(
+          "Gemini response did not contain generated text.",
+        );
+        continue;
+      }
 
-      throw new Error(
-        "Gemini response did not contain generated text.",
-      );
+      let parsed: unknown;
+
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        lastError = new Error(
+          "Gemini generated text was not valid JSON.",
+        );
+        continue;
+      }
+
+      return validateAIResult(parsed);
+    } catch (err: any) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    } finally {
+      clearTimeout(timeout);
     }
-
-    let parsed: unknown;
-
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      throw new Error(
-        "Gemini generated text was not valid JSON.",
-      );
-    }
-
-    return validateAIResult(parsed);
-  } finally {
-    clearTimeout(timeout);
   }
+
+  throw lastError ?? new Error("All Gemini model attempts failed.");
 }
 
 export default {
