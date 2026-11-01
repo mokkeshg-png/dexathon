@@ -880,3 +880,228 @@ export interface FacultyTeamAssignment {
   }>;
 }
 
+// =============================================================================
+// SaaS MULTI-TENANT & OWNER MODULE TYPES
+// =============================================================================
+
+export interface College {
+  id: string;
+  name: string;
+  code: string;
+  domain?: string;
+  logoUrl?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  contactEmail: string;
+  contactPhone?: string;
+  adminId?: string;
+  status: "pending" | "active" | "suspended" | "expired" | "cancelled";
+  maxStudents: number;
+  maxFaculty: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  code: string;
+  description?: string;
+  monthlyPriceInr: number;
+  annualPriceInr: number;
+  studentSeatLimit: number;
+  facultySeatLimit: number;
+  features: string[];
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface CollegeSubscription {
+  id: string;
+  collegeId: string;
+  planId: string;
+  billingCycle: "monthly" | "annual";
+  status: "active" | "past_due" | "grace_period" | "expired" | "suspended" | "cancelled";
+  studentSeatsPurchased: number;
+  facultySeatsPurchased: number;
+  additionalStudentSeats: number;
+  currentPeriodStart: string;
+  currentPeriodEnd: string;
+  gracePeriodEnd?: string;
+  autoRenew: boolean;
+  plan?: SubscriptionPlan;
+  college?: College;
+}
+
+export interface PaymentTransaction {
+  id: string;
+  collegeId: string;
+  subscriptionId?: string;
+  orderId: string;
+  paymentId?: string;
+  signature?: string;
+  amountInr: number;
+  currency: string;
+  status: "pending" | "authorized" | "captured" | "failed" | "refunded";
+  method: string;
+  invoiceNumber?: string;
+  invoiceUrl?: string;
+  gatewayResponse?: any;
+  errorDescription?: string;
+  createdAt: string;
+}
+
+export interface CollegeMembership {
+  id: string;
+  collegeId: string;
+  userId: string;
+  role: "college_admin" | "faculty" | "student" | "staff";
+  isSeatActive: boolean;
+  department?: string;
+  joinedAt: string;
+}
+
+export interface CollegeInvitation {
+  id: string;
+  collegeId: string;
+  email: string;
+  role: "college_admin" | "faculty" | "student" | "staff";
+  invitedBy: string;
+  token: string;
+  status: "pending" | "accepted" | "expired" | "revoked";
+  expiresAt: string;
+  createdAt: string;
+}
+
+// ── Feature 1: Industry-to-Campus Innovation Bridge ──
+
+export interface IndustryPartner {
+  id: string;
+  name: string;
+  contactName: string;
+  contactEmail: string;
+  website?: string;
+  logoUrl?: string;
+  industryDomain?: string;
+  status: "pending" | "active" | "suspended";
+  createdAt: string;
+}
+
+export interface IndustryChallenge {
+  id: string;
+  partnerId: string;
+  title: string;
+  problemStatement: string;
+  domain: string;
+  requiredSkills: string[];
+  expectedOutcomes?: string;
+  bountyOrGrant?: string;
+  targetCollegeId?: string;
+  deadline?: string;
+  status: "draft" | "open" | "reviewing" | "assigned" | "completed";
+  createdAt: string;
+  partner?: IndustryPartner;
+}
+
+export interface ChallengeApplication {
+  id: string;
+  challengeId: string;
+  projectId?: string;
+  collegeId: string;
+  teamName: string;
+  leadStudentId: string;
+  mentorFacultyId?: string;
+  proposalSummary: string;
+  aiMatchScore: number;
+  status: "submitted" | "under_review" | "accepted" | "rejected";
+  feedback?: string;
+  createdAt: string;
+}
+
+// ── Feature 2: Curriculum Evolution Intelligence ──
+
+export interface CurriculumFramework {
+  id: string;
+  collegeId: string;
+  department: string;
+  degree: string;
+  academicYear: string;
+  courseCode: string;
+  courseName: string;
+  learningOutcomes: string[];
+  syllabusTopics: string[];
+  createdAt: string;
+}
+
+export interface CurriculumGapReport {
+  id: string;
+  collegeId: string;
+  frameworkId?: string;
+  department: string;
+  coveragePercentage: number;
+  practicalEvidenceScore: number;
+  gapsIdentified: Array<{
+    topic: string;
+    gapType: "not_taught" | "low_practical_evidence" | "missing_industry_alignment";
+    impactSeverity: "low" | "medium" | "high";
+    explanation: string;
+  }>;
+  industryAlignmentScore: number;
+  recommendations: Array<{
+    action: string;
+    rationale: string;
+    priority: "high" | "medium" | "low";
+  }>;
+  status: string;
+  generatedAt: string;
+}
+
+// ── Feature 3: Project-Driven Knowledge Recovery ──
+
+export interface KnowledgeRecoveryPath {
+  id: string;
+  studentId: string;
+  projectId?: string;
+  taskId?: string;
+  conceptName: string;
+  difficultyLevel: "beginner" | "intermediate" | "advanced";
+  prerequisitePath: Array<{
+    stepNumber: number;
+    title: string;
+    description: string;
+    estimatedMinutes: number;
+    completed: boolean;
+  }>;
+  learningResources: Array<{
+    title: string;
+    url: string;
+    type: "documentation" | "interactive_lab" | "article" | "code_example";
+  }>;
+  progressPercent: number;
+  status: "not_started" | "in_progress" | "completed" | "verified";
+  facultyFeedback?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OwnerAuditLog {
+  id: string;
+  actorId?: string;
+  actorEmail?: string;
+  action: string;
+  targetEntity: string;
+  targetId?: string;
+  metadata?: any;
+  ipAddress?: string;
+  createdAt: string;
+}
+
+export interface PlatformSettings {
+  maintenanceMode: boolean;
+  defaultGracePeriodDays: number;
+  allowPublicCollegeSignup: boolean;
+  paymentGatewayMode: "test" | "live";
+}
+
+

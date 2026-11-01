@@ -18,6 +18,15 @@ import { Search } from "./pages/Search";
 import { Notifications } from "./pages/Notifications";
 import { Requests } from "./pages/Requests";
 import { Messages } from "./pages/Messages";
+import { IndustryBridge } from "./pages/IndustryBridge";
+import { CurriculumEvolution } from "./pages/CurriculumEvolution";
+import { KnowledgeRecovery } from "./pages/KnowledgeRecovery";
+import { OwnerOverview } from "./modules/owner/pages/OwnerOverview";
+import { OwnerColleges } from "./modules/owner/pages/OwnerColleges";
+import { OwnerSubscriptions } from "./modules/owner/pages/OwnerSubscriptions";
+import { OwnerRevenue } from "./modules/owner/pages/OwnerRevenue";
+import { OwnerMonitoring } from "./modules/owner/pages/OwnerMonitoring";
+import { OwnerSettings } from "./modules/owner/pages/OwnerSettings";
 import { AiAssistant } from "./components/ai/AiAssistant";
 import { Button } from "./components/ui/Button";
 import { Link } from "react-router-dom";
@@ -81,6 +90,15 @@ export default function App() {
               <Route path="/profile/:id" element={<Profile />} />
               <Route path="/admin" element={<Admin />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/industry" element={<IndustryBridge />} />
+              <Route path="/curriculum" element={<CurriculumEvolution />} />
+              <Route path="/recovery" element={<KnowledgeRecovery />} />
+              <Route path="/owner" element={<OwnerOverview />} />
+              <Route path="/owner/colleges" element={<OwnerColleges />} />
+              <Route path="/owner/subscriptions" element={<OwnerSubscriptions />} />
+              <Route path="/owner/revenue" element={<OwnerRevenue />} />
+              <Route path="/owner/monitoring" element={<OwnerMonitoring />} />
+              <Route path="/owner/settings" element={<OwnerSettings />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </main>

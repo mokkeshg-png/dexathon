@@ -377,6 +377,47 @@ export function Navbar() {
                         <Settings className="h-4 w-4 text-[#A09488]" />
                         Account Settings
                       </Link>
+
+                      <div className="pt-1 border-t border-[#F4EFE4] my-1" />
+                      <div className="px-3 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#7B828A]">
+                        Advanced Ecosystem
+                      </div>
+
+                      <Link
+                        to="/industry"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-1.5 text-xs font-medium text-[#2E2A23] hover:bg-[#FAF4E6] rounded-2xl transition-colors"
+                      >
+                        <Briefcase className="h-3.5 w-3.5 text-[#8C6000]" />
+                        Industry Innovation Bridge
+                      </Link>
+
+                      <Link
+                        to="/curriculum"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-1.5 text-xs font-medium text-[#2E2A23] hover:bg-[#FAF4E6] rounded-2xl transition-colors"
+                      >
+                        <Zap className="h-3.5 w-3.5 text-[#8C6000]" />
+                        Curriculum Intelligence
+                      </Link>
+
+                      <Link
+                        to="/recovery"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-1.5 text-xs font-medium text-[#2E2A23] hover:bg-[#FAF4E6] rounded-2xl transition-colors"
+                      >
+                        <Compass className="h-3.5 w-3.5 text-[#8C6000]" />
+                        Knowledge Recovery
+                      </Link>
+
+                      <Link
+                        to="/owner"
+                        onClick={() => setUserMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-3 py-1.5 text-xs font-bold text-[#8C6000] hover:bg-[#FFF4D0] rounded-2xl transition-colors"
+                      >
+                        <Shield className="h-3.5 w-3.5 text-[#8C6000]" />
+                        Platform Owner (SaaS)
+                      </Link>
                     </div>
 
                     <div className="px-1.5 pb-1.5 border-t border-[#F4EFE4]">
