@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
-const envUrl = (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_URL) as string | undefined;
-const envKey = (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_ANON_KEY) as string | undefined;
+const envUrl = ((typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_URL) || (typeof globalThis !== "undefined" && (globalThis as any).process?.env?.VITE_SUPABASE_URL)) as string | undefined;
+const envKey = ((typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_ANON_KEY) || (typeof globalThis !== "undefined" && (globalThis as any).process?.env?.VITE_SUPABASE_ANON_KEY)) as string | undefined;
 
 export const isSupabaseConfigured = Boolean(
   envUrl && envKey && !envUrl.includes("placeholder")

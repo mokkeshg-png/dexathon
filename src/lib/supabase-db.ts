@@ -9,6 +9,7 @@ import { supabase, isSupabaseConfigured } from "@/lib/supabase";
 import { computeCompleteness } from "@/lib/completeness";
 import { analyzeCompatibility } from "@/lib/matching";
 import type {
+  PlatformRole,
   Profile,
   Project,
   ProjectRole,
@@ -190,6 +191,12 @@ export function getProfileMeta(userId: string): {
   coverPhotoUrl?: string;
   education?: UserEducation[];
   achievements?: UserAchievement[];
+  role?: string;
+  organizationName?: string;
+  industryDomain?: string;
+  collegeCode?: string;
+  collegeDomain?: string;
+  website?: string;
 } {
   try {
     const raw = typeof window !== "undefined" ? localStorage.getItem(`synaptra_profile_meta_${userId}`) : null;
@@ -206,6 +213,12 @@ export function saveProfileMeta(
     coverPhotoUrl?: string;
     education?: UserEducation[];
     achievements?: UserAchievement[];
+  role?: string;
+  organizationName?: string;
+  industryDomain?: string;
+  collegeCode?: string;
+  collegeDomain?: string;
+  website?: string;
   }>
 ) {
   try {
@@ -255,7 +268,7 @@ function rowToProfile(row: any, extras?: {
     id: row.id,
     userId: row.id, // profiles.id == auth.users.id
     email: row.email ?? "",
-    role: (row.role ?? "student") as Profile["role"],
+    role: ((meta.role as Profile["role"]) || (row.role ?? "student")) as Profile["role"],
     fullName: row.full_name ?? "",
     headline: meta.headline,
     coverPhotoUrl: meta.coverPhotoUrl ? meta.coverPhotoUrl : undefined,
@@ -418,19 +431,29 @@ export async function signUp(input: {
   email: string;
   password: string;
   fullName: string;
-  role: "student" | "faculty";
+  role: PlatformRole;
+  collegeCode?: string;
+  collegeDomain?: string;
+  phone?: string;
+  organizationName?: string;
+  industryDomain?: string;
+  website?: string;
   institution: string;
-  department: string;
+  department?: string;
   academicYear?: number;
   designation?: string;
 }) {
+  const safeDbRole = input.role === "faculty" ? "faculty" : input.role === "admin" || input.role === "college_admin" ? "admin" : "student";
   const { data, error } = await supabase!.auth.signUp({
     email: input.email,
     password: input.password,
     options: {
       data: {
         full_name: input.fullName,
-        role: input.role,
+        role: safeDbRole,
+        actual_role: input.role,
+        designation: input.designation,
+        phone: input.phone,
         institution: input.institution,
         department: input.department,
       },
@@ -440,6 +463,21 @@ export async function signUp(input: {
 
   const userId = data.user?.id;
   if (!userId) throw new Error("Registration failed — no user ID returned.");
+
+  saveProfileMeta(userId, {
+    role: input.role,
+    organizationName: input.organizationName,
+    industryDomain: input.industryDomain,
+    collegeCode: input.collegeCode,
+    collegeDomain: input.collegeDomain,
+    website: input.website,
+  });
+
+  if (input.phone) {
+    try {
+      await supabase!.from("profiles").update({ phone: input.phone }).eq("id", userId);
+    } catch {}
+  }
 
   // Upsert student/faculty extension
   if (input.role === "student" && input.academicYear !== undefined) {
@@ -839,7 +877,7 @@ export function bustProjectsCache() {
   _projectsPromise = null;
 }
 
-export async function fetchProjects(): Promise<Project[]> {
+export async function fetchProjects(_collegeId?: string | null): Promise<Project[]> {
   const now = Date.now();
   if (_projectsCache && now - _projectsCacheAt < 30_000) return _projectsCache;
   if (_projectsPromise) return _projectsPromise;

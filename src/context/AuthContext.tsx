@@ -111,13 +111,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   }, []);
 
-  const isOwner = Boolean(profile?.role === "owner" || (user && user.email?.includes("mokkesh")));
-  const isCollegeAdmin = Boolean(profile?.role === "college_admin" || profile?.role === "admin");
-  const isAdmin = isOwner || isCollegeAdmin;
-  const isFaculty = Boolean(profile?.role === "faculty" || profile?.designation);
-  const isStudent = Boolean(profile?.role === "student" && !profile?.designation);
-  const isStaff = Boolean(profile?.role === "staff");
-  const isIndustryPartner = Boolean(profile?.role === "industry_partner");
+  const role = profile?.role;
+  const isOwner = Boolean(role === "owner");
+  const isCollegeAdmin = Boolean(role === "college_admin" || role === "admin");
+  const isAdmin = Boolean(isOwner || isCollegeAdmin);
+  const isFaculty = Boolean(role === "faculty");
+  const isStudent = Boolean(role === "student" || (!role && user));
+  const isStaff = Boolean(role === "staff");
+  const isIndustryPartner = Boolean(role === "industry_partner");
   const isSuspended = Boolean(profile?.status === "suspended");
   const collegeId = profile?.collegeId || null;
 

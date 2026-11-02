@@ -6,7 +6,7 @@ import { TagSelector } from "@/components/ui/TagSelector";
 import { RESEARCH_DOMAINS } from "@/lib/taxonomies";
 import { useToast } from "@/context/ToastContext";
 import { useEffect, useState, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import {
   fetchProjects,
@@ -51,7 +51,18 @@ import {
 } from "lucide-react";
 
 export function Dashboard() {
-  const { user, profile, refresh } = useAuth();
+  const { user, profile, isFaculty, isAdmin, isIndustryPartner, isCollegeAdmin, refresh, collegeId } = useAuth();
+
+  // Role Redirection Guards: Ensure non-students never see the Student Dashboard!
+  if (isFaculty || profile?.role === "faculty") {
+    return <Navigate to="/faculty" replace />;
+  }
+  if (isCollegeAdmin || profile?.role === "college_admin" || isAdmin || profile?.role === "admin" || profile?.role === "owner") {
+    return <Navigate to="/admin" replace />;
+  }
+  if (isIndustryPartner || profile?.role === "industry_partner") {
+    return <Navigate to="/industry" replace />;
+  }
   const toast = useToast();
 
   const [projects, setProjects] = useState<Project[]>([]);
@@ -80,8 +91,9 @@ export function Dashboard() {
     async function load() {
       setLoading(true);
       try {
+        // SECURITY: Fetch projects scoped to user's college (multi-tenancy)
         const [projs, jrs, mrs, profiles, memberships] = await Promise.all([
-          fetchProjects(),
+          fetchProjects(collegeId),
           fetchJoinRequests(undefined, user!.id),
           fetchMentorshipRequests(undefined, user!.id),
           fetchAllProfiles(),
@@ -131,8 +143,6 @@ export function Dashboard() {
     ...projects.filter((p) => p.ownerId === user?.id).map((p) => p.id),
   ]);
   const activeProjects = projects.filter((p) => activeProjectIds.has(p.id));
-
-  const isFaculty = Boolean(profile?.designation || profile?.role === "faculty");
 
   // Projects supervised (as faculty mentor or project owner) - PRD 1 Section 7.1
   const supervisedProjects = useMemo(() => {
@@ -317,7 +327,6 @@ export function Dashboard() {
     refresh();
   };
 
-  
   return (
     <div className="clay-page space-y-8">
       {/* Welcome Banner */}

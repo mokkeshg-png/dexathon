@@ -4,22 +4,20 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import type { PlatformRole } from "@/types";
-import { Lock, ShieldAlert, AlertTriangle, ArrowLeft } from "lucide-react";
+import { Lock, AlertTriangle, ArrowLeft } from "lucide-react";
 
 interface ProtectedRouteProps {
   children: ReactNode;
   allowedRoles?: PlatformRole[];
-  requireOwner?: boolean;
   requireAdmin?: boolean;
 }
 
 export function ProtectedRoute({
   children,
   allowedRoles,
-  requireOwner = false,
   requireAdmin = false,
 }: ProtectedRouteProps) {
-  const { ready, user, profile, isOwner, isAdmin, isSuspended } = useAuth();
+  const { ready, user, profile, isAdmin, isSuspended } = useAuth();
   const location = useLocation();
 
   // 1. While auth state is restoring from Supabase session
@@ -62,31 +60,18 @@ export function ProtectedRoute({
     );
   }
 
-  // 4. Platform Owner requirement
-  if (requireOwner && !isOwner) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center p-4">
-        <Card className="max-w-md p-6 sm:p-8 text-center space-y-4 border-[#ECE5D8] bg-white shadow-card rounded-3xl">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#FFF4D0] text-[#8C6000] border border-[#FFE785]">
-            <ShieldAlert className="h-7 w-7" />
-          </div>
-          <h2 className="font-serif text-2xl font-bold text-[#181B1F]">Platform Owner Access Required</h2>
-          <p className="text-xs sm:text-sm text-[#5E646A] leading-relaxed">
-            The requested workspace requires verified SaaS Platform Owner privileges. This administrative area is restricted from ordinary campus accounts.
-          </p>
-          <div className="pt-2 flex justify-center gap-2">
-            <Link to="/dashboard">
-              <Button variant="primary" size="sm">
-                <ArrowLeft className="h-3.5 w-3.5 mr-1" /> Campus Home
-              </Button>
-            </Link>
-          </div>
-        </Card>
-      </div>
-    );
-  }
+  // Calculate role-appropriate fallback
+  const userRole = profile?.role || "student";
+  const homeRoute =
+    userRole === "faculty"
+      ? "/faculty"
+      : userRole === "admin" || userRole === "college_admin" || userRole === "owner" || isAdmin
+      ? "/admin"
+      : userRole === "industry_partner"
+      ? "/industry"
+      : "/dashboard";
 
-  // 5. Admin requirement (Platform Owner or College Admin)
+  // 4. Admin requirement (College Admin / Institutional Leadership)
   if (requireAdmin && !isAdmin) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center p-4">
@@ -99,9 +84,9 @@ export function ProtectedRoute({
             This console is reserved exclusively for College Administrators and verified campus leadership.
           </p>
           <div className="pt-2 flex justify-center gap-2">
-            <Link to="/dashboard">
+            <Link to={homeRoute}>
               <Button variant="primary" size="sm">
-                <ArrowLeft className="h-3.5 w-3.5 mr-1" /> Return to Dashboard
+                <ArrowLeft className="h-3.5 w-3.5 mr-1" /> Return to My Dashboard
               </Button>
             </Link>
           </div>
@@ -112,8 +97,7 @@ export function ProtectedRoute({
 
   // 6. Role-specific check if allowedRoles is provided
   if (allowedRoles && allowedRoles.length > 0) {
-    const userRole = profile?.role || "student";
-    const hasRole = allowedRoles.includes(userRole as PlatformRole) || isOwner;
+    const hasRole = allowedRoles.includes(userRole as PlatformRole) || (isAdmin && allowedRoles.includes("admin"));
 
     if (!hasRole) {
       return (
@@ -127,9 +111,9 @@ export function ProtectedRoute({
               Your account role (<strong>{userRole}</strong>) does not have permission to view this module. Authorized roles: {allowedRoles.join(", ")}.
             </p>
             <div className="pt-2 flex justify-center gap-2">
-              <Link to="/dashboard">
+              <Link to={homeRoute}>
                 <Button variant="primary" size="sm">
-                  <ArrowLeft className="h-3.5 w-3.5 mr-1" /> Return to Dashboard
+                  <ArrowLeft className="h-3.5 w-3.5 mr-1" /> Return to My Dashboard
                 </Button>
               </Link>
             </div>
@@ -142,3 +126,4 @@ export function ProtectedRoute({
   // Authorized -> render child tree
   return <>{children}</>;
 }
+

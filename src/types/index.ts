@@ -958,7 +958,7 @@ export interface CollegeMembership {
   id: string;
   collegeId: string;
   userId: string;
-  role: "college_admin" | "faculty" | "student" | "staff";
+  role: "college_admin" | "faculty" | "student" | "staff" | "industry_partner";
   isSeatActive: boolean;
   department?: string;
   joinedAt: string;
@@ -968,7 +968,7 @@ export interface CollegeInvitation {
   id: string;
   collegeId: string;
   email: string;
-  role: "college_admin" | "faculty" | "student" | "staff";
+  role: "college_admin" | "faculty" | "student" | "staff" | "industry_partner";
   invitedBy: string;
   token: string;
   status: "pending" | "accepted" | "expired" | "revoked";

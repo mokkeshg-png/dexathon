@@ -205,7 +205,7 @@ export function ProjectRoom() {
       }
 
       // Check access
-      const access = canAccessRoomSync(user.id, id, mems, proj.ownerId) || authProfile?.role === "admin";
+      const access = canAccessRoomSync(user.id, id, mems, proj.ownerId) || authProfile?.role === "admin" || authProfile?.role === "owner";
       setHasAccess(access);
       if (!access) {
         setDataLoading(false);

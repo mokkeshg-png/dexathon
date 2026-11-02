@@ -21,14 +21,12 @@ import {
   MessageSquare,
   PlusCircle,
   Zap,
-  Layers,
-  Activity,
   CreditCard,
   Building2,
 } from "lucide-react";
 
 export function Navbar() {
-  const { user, profile, isOwner, isCollegeAdmin, logout } = useAuth();
+  const { user, profile, isCollegeAdmin, isOwner, logout } = useAuth();
   const { items, unread, markRead, markAll } = useNotifications();
   const navigate = useNavigate();
   const location = useLocation();
@@ -55,6 +53,14 @@ export function Navbar() {
 
   const role = profile?.role ?? "student";
 
+  const homeRoute = useMemo(() => {
+    if (!user) return "/";
+    if (isCollegeAdmin || isOwner || role === "admin" || role === "college_admin") return "/admin";
+    if (role === "industry_partner") return "/industry";
+    if (role === "faculty") return "/faculty";
+    return "/dashboard";
+  }, [user, isCollegeAdmin, isOwner, role]);
+
   const navLinks = useMemo(() => {
     if (!user) {
       return [
@@ -64,21 +70,12 @@ export function Navbar() {
       ];
     }
 
-    if (isOwner || role === "owner") {
+    if (role === "admin" || role === "college_admin" || role === "owner" || isCollegeAdmin || isOwner) {
       return [
-        { name: "Owner Overview", href: "/owner", icon: Shield },
-        { name: "Colleges", href: "/owner/colleges", icon: Building2 },
-        { name: "Subscriptions", href: "/owner/subscriptions", icon: Layers },
-        { name: "Revenue Ledger", href: "/owner/revenue", icon: CreditCard },
-        { name: "Monitoring", href: "/owner/monitoring", icon: Activity },
-      ];
-    }
-
-    if (role === "admin" || role === "college_admin" || isCollegeAdmin) {
-      return [
-        { name: "College Admin", href: "/admin", icon: Shield },
+        { name: "Institution Dashboard", href: "/admin", icon: Shield },
+        { name: "Subscription", href: "/subscription", icon: CreditCard },
         { name: "Campus Projects", href: "/projects", icon: Briefcase },
-        { name: "Student Directory", href: "/collaborators", icon: Users },
+        { name: "Members Directory", href: "/collaborators", icon: Users },
         { name: "Curriculum Gap", href: "/curriculum", icon: Zap },
         { name: "Messages", href: "/messages", icon: MessageSquare },
       ];
@@ -86,18 +83,20 @@ export function Navbar() {
 
     if (role === "industry_partner") {
       return [
-        { name: "Innovation Challenges", href: "/industry", icon: Briefcase },
+        { name: "Industry Dashboard", href: "/industry", icon: Briefcase },
         { name: "Campus Projects", href: "/projects", icon: Compass },
+        { name: "Talent Directory", href: "/collaborators", icon: Users },
         { name: "Messages", href: "/messages", icon: MessageSquare },
       ];
     }
 
     if (role === "faculty") {
       return [
-        { name: "Overview", href: "/dashboard", icon: LayoutDashboard },
-        { name: "Research Projects", href: "/projects", icon: Briefcase },
+        { name: "Faculty Studio", href: "/faculty", icon: LayoutDashboard },
+        { name: "Academic Projects", href: "/projects", icon: Briefcase },
         { name: "Student Talent", href: "/collaborators", icon: Users },
         { name: "Applications & Teams", href: "/requests", icon: Inbox },
+        { name: "Curriculum Gap", href: "/curriculum", icon: Zap },
         { name: "Messages", href: "/messages", icon: MessageSquare },
       ];
     }
@@ -111,13 +110,14 @@ export function Navbar() {
     }
 
     return [
-      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { name: "Student Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { name: "Discover Projects", href: "/projects", icon: Compass },
       { name: "Collaborators", href: "/collaborators", icon: Users },
+      { name: "Industry Challenges", href: "/industry", icon: Briefcase },
       { name: "My Teams & Requests", href: "/requests", icon: Inbox },
       { name: "Messages", href: "/messages", icon: MessageSquare },
     ];
-  }, [user, role, isOwner, isCollegeAdmin]);
+  }, [user, role, isCollegeAdmin, isOwner]);
 
   const isActiveRoute = (path: string) => {
     if (path === "/projects" && location.pathname.startsWith("/projects") && location.pathname !== "/projects/new") {
@@ -147,7 +147,7 @@ export function Navbar() {
       <div className="mx-auto flex h-[60px] max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Brand */}
         <div className="flex items-center gap-5">
-          <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-2.5 group flex-shrink-0">
+          <Link to={homeRoute} className="flex items-center gap-2.5 group flex-shrink-0">
             {/* Logo mark */}
             <div
               className="flex h-10 w-10 items-center justify-center rounded-[14px] font-serif font-black text-xl text-[#181B1F] transition-transform duration-200 group-hover:scale-105"
@@ -388,15 +388,47 @@ export function Navbar() {
                         Messages & Discussions
                       </Link>
 
-                      {role === "admin" && (
+                      {role === "faculty" && (
+                        <Link
+                          to="/faculty"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-[#8C6000] hover:bg-[#FFF4D0] rounded-2xl transition-colors"
+                        >
+                          <Building2 className="h-4 w-4 text-[#8C6000]" />
+                          Faculty Workspace
+                        </Link>
+                      )}
+
+                      {role === "industry_partner" && (
+                        <Link
+                          to="/industry"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-[#8C6000] hover:bg-[#FFF4D0] rounded-2xl transition-colors"
+                        >
+                          <Briefcase className="h-4 w-4 text-[#8C6000]" />
+                          Industry Partner Console
+                        </Link>
+                      )}
+
+                      {isCollegeAdmin && (
+                        <>
                         <Link
                           to="/admin"
                           onClick={() => setUserMenuOpen(false)}
                           className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 rounded-2xl transition-colors"
                         >
                           <Shield className="h-4 w-4 text-purple-500" />
-                          Admin Console
+                          College Admin Console
                         </Link>
+                        <Link
+                          to="/subscription"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-[#8C6000] hover:bg-[#FFF4D0] rounded-2xl transition-colors"
+                        >
+                          <span className="h-4 w-4 text-[#8C6000] flex items-center justify-center font-bold text-xs">₹</span>
+                          Subscription & Billing
+                        </Link>
+                        </>
                       )}
 
                       <Link
@@ -422,14 +454,16 @@ export function Navbar() {
                         Industry Innovation Bridge
                       </Link>
 
-                      <Link
-                        to="/curriculum"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-3 py-1.5 text-xs font-medium text-[#2E2A23] hover:bg-[#FAF4E6] rounded-2xl transition-colors"
-                      >
-                        <Zap className="h-3.5 w-3.5 text-[#8C6000]" />
-                        Curriculum Intelligence
-                      </Link>
+                      {(role === "faculty" || isCollegeAdmin) && (
+                        <Link
+                          to="/curriculum"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-3 py-1.5 text-xs font-medium text-[#2E2A23] hover:bg-[#FAF4E6] rounded-2xl transition-colors"
+                        >
+                          <Zap className="h-3.5 w-3.5 text-[#8C6000]" />
+                          Curriculum Intelligence
+                        </Link>
+                      )}
 
                       <Link
                         to="/recovery"
@@ -438,15 +472,6 @@ export function Navbar() {
                       >
                         <Compass className="h-3.5 w-3.5 text-[#8C6000]" />
                         Knowledge Recovery
-                      </Link>
-
-                      <Link
-                        to="/owner"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-3 py-1.5 text-xs font-bold text-[#8C6000] hover:bg-[#FFF4D0] rounded-2xl transition-colors"
-                      >
-                        <Shield className="h-3.5 w-3.5 text-[#8C6000]" />
-                        Platform Owner (SaaS)
                       </Link>
                     </div>
 
