@@ -83,8 +83,7 @@ export function Register() {
   // ==========================================
   const [studentFullName, setStudentFullName] = useState("");
   const [studentEmail, setStudentEmail] = useState("");
-  const [studentInstitution, setStudentInstitution] = useState(INSTITUTIONS[0]);
-  const [customStudentInstitution, setCustomStudentInstitution] = useState("");
+  const [studentInstitution, setStudentInstitution] = useState("");
   const [studentDepartment, setStudentDepartment] = useState(DEPARTMENTS[0]);
   const [studentDegree, setStudentDegree] = useState(DEGREE_PROGRAMS[0]);
   const [studentYear, setStudentYear] = useState<number>(3);
@@ -107,8 +106,7 @@ export function Register() {
   // ==========================================
   const [facultyFullName, setFacultyFullName] = useState("");
   const [facultyEmail, setFacultyEmail] = useState("");
-  const [facultyInstitution, setFacultyInstitution] = useState(INSTITUTIONS[0]);
-  const [customFacultyInstitution, setCustomFacultyInstitution] = useState("");
+  const [facultyInstitution, setFacultyInstitution] = useState("");
   const [facultyDepartment, setFacultyDepartment] = useState(DEPARTMENTS[0]);
   const [facultyDesignation, setFacultyDesignation] = useState(DESIGNATIONS[0]);
   const [facultyId, setFacultyId] = useState("");
@@ -147,8 +145,7 @@ export function Register() {
   // ==========================================
   const [adminEmail, setAdminEmail] = useState("");
   const [adminFullName, setAdminFullName] = useState("");
-  const [adminInstitution, setAdminInstitution] = useState(INSTITUTIONS[0]);
-  const [customAdminInstitution, setCustomAdminInstitution] = useState("");
+  const [adminInstitution, setAdminInstitution] = useState("");
   const [adminDesignation, setAdminDesignation] = useState(ADMIN_DESIGNATIONS[0]);
   const [adminPhone, setAdminPhone] = useState("");
 
@@ -254,10 +251,7 @@ export function Register() {
       return;
     }
 
-    const finalInstitution =
-      studentInstitution.includes("Other")
-        ? customStudentInstitution.trim() || "Affiliated University"
-        : studentInstitution;
+    const finalInstitution = studentInstitution.trim();
 
     const finalDegree = studentDegree;
 
@@ -316,10 +310,7 @@ export function Register() {
       return;
     }
 
-    const finalInstitution =
-      facultyInstitution.includes("Other")
-        ? customFacultyInstitution.trim() || "Affiliated University"
-        : facultyInstitution;
+    const finalInstitution = facultyInstitution.trim();
 
     setLoading(true);
     try {
@@ -440,10 +431,7 @@ export function Register() {
       return;
     }
 
-    const institution =
-      adminInstitution.includes("Other")
-        ? customAdminInstitution.trim()
-        : adminInstitution;
+    const institution = adminInstitution.trim();
 
     if (!institution) {
       setError("Please specify your college or university institution.");
@@ -633,18 +621,24 @@ export function Register() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Field label="College / University" required>
-                    <select
+                  <Field
+                    label="College / University"
+                    required
+                    hint="Type your institution name or choose from suggestions"
+                  >
+                    <Input
+                      list="student-institutions-list"
+                      required
+                      placeholder="Type your college or university name..."
                       value={studentInstitution}
                       onChange={(e) => setStudentInstitution(e.target.value)}
-                      className="w-full rounded-2xl border border-[#ECE5D8] bg-[#FFFDF8] px-3.5 py-2.5 text-xs text-[#181B1F] focus:border-[#FFC812] focus:outline-none"
-                    >
-                      {INSTITUTIONS.map((inst) => (
-                        <option key={inst} value={inst}>
-                          {inst}
-                        </option>
+                      className="w-full font-medium"
+                    />
+                    <datalist id="student-institutions-list">
+                      {INSTITUTIONS.filter((i) => !i.includes("Other")).map((inst) => (
+                        <option key={inst} value={inst} />
                       ))}
-                    </select>
+                    </datalist>
                   </Field>
 
                   <Field label="Department" required>
@@ -661,17 +655,6 @@ export function Register() {
                     </select>
                   </Field>
                 </div>
-
-                {studentInstitution.includes("Other") && (
-                  <Field label="Specify Your Institution Name" required>
-                    <Input
-                      required
-                      placeholder="Enter full name of your university / college"
-                      value={customStudentInstitution}
-                      onChange={(e) => setCustomStudentInstitution(e.target.value)}
-                    />
-                  </Field>
-                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <Field label="Degree / Course" required>
@@ -925,18 +908,24 @@ export function Register() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Field label="College / Institution" required>
-                    <select
+                  <Field
+                    label="College / Institution"
+                    required
+                    hint="Type your institution name or choose from suggestions"
+                  >
+                    <Input
+                      list="faculty-institutions-list"
+                      required
+                      placeholder="Type your college or university name..."
                       value={facultyInstitution}
                       onChange={(e) => setFacultyInstitution(e.target.value)}
-                      className="w-full rounded-2xl border border-[#ECE5D8] bg-[#FFFDF8] px-3.5 py-2.5 text-xs text-[#181B1F] focus:border-[#FFC812] focus:outline-none"
-                    >
-                      {INSTITUTIONS.map((inst) => (
-                        <option key={inst} value={inst}>
-                          {inst}
-                        </option>
+                      className="w-full font-medium"
+                    />
+                    <datalist id="faculty-institutions-list">
+                      {INSTITUTIONS.filter((i) => !i.includes("Other")).map((inst) => (
+                        <option key={inst} value={inst} />
                       ))}
-                    </select>
+                    </datalist>
                   </Field>
 
                   <Field label="Department" required>
@@ -953,17 +942,6 @@ export function Register() {
                     </select>
                   </Field>
                 </div>
-
-                {facultyInstitution.includes("Other") && (
-                  <Field label="Specify Institution Name" required>
-                    <Input
-                      required
-                      placeholder="Enter full name of your university"
-                      value={customFacultyInstitution}
-                      onChange={(e) => setCustomFacultyInstitution(e.target.value)}
-                    />
-                  </Field>
-                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <Field label="Academic Designation" required>
@@ -1378,18 +1356,24 @@ export function Register() {
                   </Field>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Field label="College / University" required>
-                      <select
+                    <Field
+                      label="College / University"
+                      required
+                      hint="Type your institution name or choose from suggestions"
+                    >
+                      <Input
+                        list="admin-institutions-list"
+                        required
+                        placeholder="Type your college or university name..."
                         value={adminInstitution}
                         onChange={(e) => setAdminInstitution(e.target.value)}
-                        className="w-full rounded-2xl border border-[#ECE5D8] bg-[#FFFDF8] px-3.5 py-2.5 text-xs text-[#181B1F] focus:border-[#FFC812] focus:outline-none"
-                      >
-                        {INSTITUTIONS.map((inst) => (
-                          <option key={inst} value={inst}>
-                            {inst}
-                          </option>
+                        className="w-full font-medium"
+                      />
+                      <datalist id="admin-institutions-list">
+                        {INSTITUTIONS.filter((i) => !i.includes("Other")).map((inst) => (
+                          <option key={inst} value={inst} />
                         ))}
-                      </select>
+                      </datalist>
                     </Field>
 
                     <Field label="Administrative Designation" required>
@@ -1406,17 +1390,6 @@ export function Register() {
                       </select>
                     </Field>
                   </div>
-
-                  {adminInstitution.includes("Other") && (
-                    <Field label="Enter College / University Name" required>
-                      <Input
-                        required
-                        placeholder="e.g. Stanford University School of Engineering"
-                        value={customAdminInstitution}
-                        onChange={(e) => setCustomAdminInstitution(e.target.value)}
-                      />
-                    </Field>
-                  )}
 
                   <Field label="Official Contact Phone" hint="Optional campus direct line or office contact">
                     <Input

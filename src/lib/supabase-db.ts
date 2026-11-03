@@ -438,10 +438,25 @@ export async function signUp(input: {
   organizationName?: string;
   industryDomain?: string;
   website?: string;
-  institution: string;
+  institution?: string;
   department?: string;
   academicYear?: number;
   designation?: string;
+  collegeId?: string;
+  degreeProgram?: string;
+  semester?: string;
+  studentId?: string;
+  skills?: string[];
+  interests?: string[];
+  facultyId?: string;
+  expertise?: string[];
+  subjectsTaught?: string[];
+  companyName?: string;
+  industrySector?: string;
+  jobTitle?: string;
+  location?: string;
+  technologies?: string[];
+  companyDescription?: string;
 }) {
   const safeDbRole = input.role === "faculty" ? "faculty" : input.role === "admin" || input.role === "college_admin" ? "admin" : "student";
   const { data, error } = await supabase!.auth.signUp({

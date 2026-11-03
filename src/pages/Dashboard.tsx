@@ -27,8 +27,6 @@ import { AiProjectExplanation } from "@/components/projects/AiProjectExplanation
 import { Button } from "@/components/ui/Button";
 import { EmptyState, Progress } from "@/components/ui/Card";
 import type { Project, ProjectMember, JoinRequest, MentorshipRequest, Profile, AiAnalysisRecord } from "@/types";
-import { FacultyStudentDirectory } from "@/components/faculty/FacultyStudentDirectory";
-import { AcademicProjectCreatorModal } from "@/components/faculty/AcademicProjectCreatorModal";
 import { DetailedMonitoringModal } from "@/components/faculty/DetailedMonitoringModal";
 import {
   Sparkles,
@@ -36,7 +34,6 @@ import {
   FolderPlus,
   Users,
   GraduationCap,
-  Building2,
   ArrowUpRight,
   Loader2,
   Inbox,
@@ -79,9 +76,6 @@ export function Dashboard() {
   const [addSkillOpen, setAddSkillOpen] = useState(false);
   const [addInterestOpen, setAddInterestOpen] = useState(false);
 
-  // Faculty Workspace State (Req 2, 3, 6)
-  const [facultyTab, setFacultyTab] = useState<"monitoring" | "students">("monitoring");
-  const [academicCreatorOpen, setAcademicCreatorOpen] = useState(false);
   const [monitoringProject, setMonitoringProject] = useState<Project | null>(null);
 
   useEffect(() => {
@@ -337,10 +331,8 @@ export function Dashboard() {
               className="inline-flex items-center gap-1.5 rounded-2xl px-3.5 py-1.5 text-xs font-bold uppercase tracking-widest border"
               style={{ background: "linear-gradient(135deg,#FFF8DC,#FFE680)", color: "#7A4D00", borderColor: "#FFD040" }}
             >
-              {user.email?.includes("faculty") || profile.designation
-                ? <Building2 className="h-3.5 w-3.5" />
-                : <GraduationCap className="h-3.5 w-3.5" />}
-              {profile.designation ? "Faculty Workspace" : "Researcher Workspace"}
+              <GraduationCap className="h-3.5 w-3.5" />
+              Student Researcher Workspace
             </span>
             <span className="text-xs text-[#8C8372] font-semibold bg-white/60 rounded-full px-2.5 py-0.5 border border-[#ECE5D8]">
               {profile.institution}
@@ -353,9 +345,7 @@ export function Dashboard() {
             </span>!
           </h1>
           <p className="text-sm text-[#5E646A] max-w-xl leading-relaxed">
-            {profile.designation
-              ? "Guide student initiatives, review research mentorship requests, and track active laboratory collaborations."
-              : "Discover research projects matching your skills, coordinate with team members, and track your applications."}
+            Discover research projects matching your skills, coordinate with team members, and track your applications.
           </p>
           {/* Stats row */}
           <div className="flex flex-wrap gap-4 pt-1">
@@ -376,16 +366,8 @@ export function Dashboard() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2.5 shrink-0 relative z-10">
-          {isFaculty && (
-            <Button
-              onClick={() => setAcademicCreatorOpen(true)}
-              variant="primary"
-            >
-              <Sparkles className="h-4 w-4" /> Create Academic Project
-            </Button>
-          )}
           <Link to="/projects/new">
-            <Button variant="outline"><FolderPlus className="h-4 w-4" /> Custom Project</Button>
+            <Button variant="primary" className="shadow-clay"><FolderPlus className="h-4 w-4 mr-1" /> Create Project</Button>
           </Link>
           <Link to="/projects">
             <Button variant="ghost"><Compass className="h-4 w-4" /> Browse</Button>
@@ -574,51 +556,18 @@ export function Dashboard() {
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="font-serif text-2xl font-bold text-[#181B1F]">
-                  {isFaculty ? "Faculty Academic Management & Multi-Project Oversight" : "Team Monitoring & Health Oversight"}
+                  Student Pod & Team Health Oversight
                 </h2>
                 <span className="clay-badge clay-badge-gold"><Activity className="h-3 w-3 mr-1" /> Active Telemetry</span>
               </div>
               <p className="text-xs text-[#5E646A] mt-1">
-                Evidence-based project health index, role-to-role dependencies, and collaboration gap monitoring across assigned student pods
+                Evidence-based project health index, role-to-role dependencies, and collaboration gap monitoring across your active student pods
               </p>
             </div>
-
-            {/* Faculty Mode Tab Switcher */}
-            {isFaculty && (
-              <div className="flex items-center gap-1.5 p-1.5 bg-white/70 rounded-2xl border border-[#ECE5D8] self-start sm:self-auto shadow-xs">
-                <button
-                  type="button"
-                  onClick={() => setFacultyTab("monitoring")}
-                  className={`clay-btn text-xs px-3.5 py-1.5 ${
-                    facultyTab === "monitoring"
-                      ? "clay-btn-primary"
-                      : "clay-btn-ghost"
-                  }`}
-                >
-                  <Layers className="h-3.5 w-3.5 mr-1" />
-                  <span>Monitored Pods ({supervisedProjects.length})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFacultyTab("students")}
-                  className={`clay-btn text-xs px-3.5 py-1.5 ${
-                    facultyTab === "students"
-                      ? "clay-btn-primary"
-                      : "clay-btn-ghost"
-                  }`}
-                >
-                  <Users className="h-3.5 w-3.5 mr-1" />
-                  <span>Student Directory</span>
-                </button>
-              </div>
-            )}
           </div>
 
-          {isFaculty && facultyTab === "students" ? (
-            <FacultyStudentDirectory profiles={allProfiles} />
-          ) : (
-            <>
-              {/* Quick Stats Panel (PRD 1 Section 7.1) */}
+          <>
+            {/* Quick Stats Panel (PRD 1 Section 7.1) */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="clay-card p-5 flex items-center gap-3.5">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#FFF8DC] to-[#FFE680] text-[#7A4D00] shrink-0 border border-[#FFD040] shadow-xs">
@@ -750,7 +699,6 @@ export function Dashboard() {
                 })}
               </div>
             </>
-          )}
         </section>
       )}
 
@@ -988,19 +936,6 @@ export function Dashboard() {
           </div>
         </div>
       </Modal>
-
-      {/* Faculty Academic Mini-Project Creator Modal (Req 2 & 3) */}
-      {isFaculty && (
-        <AcademicProjectCreatorModal
-          open={academicCreatorOpen}
-          onClose={() => setAcademicCreatorOpen(false)}
-          facultyId={user.id}
-          allProfiles={allProfiles}
-          onCreated={async () => {
-            await refresh();
-          }}
-        />
-      )}
 
       {/* Detailed Multi-Metric Monitoring Modal (Req 6) */}
       <DetailedMonitoringModal

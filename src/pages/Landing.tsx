@@ -12,7 +12,16 @@ import {
 } from "lucide-react";
 
 export function Landing() {
-  const { user } = useAuth();
+  const { user, profile, isFaculty, isAdmin, isIndustryPartner, isCollegeAdmin } = useAuth();
+
+  const homeRoute =
+    isFaculty || profile?.role === "faculty"
+      ? "/faculty"
+      : isCollegeAdmin || isAdmin || profile?.role === "college_admin" || profile?.role === "admin"
+      ? "/admin"
+      : isIndustryPartner || profile?.role === "industry_partner"
+      ? "/industry"
+      : "/dashboard";
 
   return (
     <div className="flex flex-col">
@@ -37,7 +46,7 @@ export function Landing() {
 
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3.5">
               {user ? (
-                <Link to="/dashboard">
+                <Link to={homeRoute}>
                   <Button size="lg" variant="primary" className="shadow-clay">
                     Open Your Dashboard <ArrowRight className="h-4 w-4 ml-1.5" />
                   </Button>
