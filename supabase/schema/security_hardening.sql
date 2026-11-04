@@ -155,3 +155,62 @@ CREATE POLICY "View documents based on access level"
             ELSE FALSE
         END
     );
+
+-- 8. HARDEN WEEKLY SUBMISSIONS ACCESS: Only faculty mentors and owners can review
+CREATE TABLE IF NOT EXISTS public.weekly_submissions (
+    id TEXT PRIMARY KEY,
+    project_id UUID REFERENCES public.projects(id) ON DELETE CASCADE,
+    student_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE,
+    student_name TEXT NOT NULL,
+    role_name TEXT NOT NULL,
+    week_number INT NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    deliverables JSONB DEFAULT '[]'::jsonb,
+    blockers TEXT,
+    faculty_questions TEXT,
+    faculty_feedback TEXT,
+    reviewed_by UUID REFERENCES public.profiles(id),
+    reviewed_at TIMESTAMPTZ,
+    review_status TEXT DEFAULT 'pending',
+    submitted_at TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.weekly_submissions ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Project team and faculty view submissions" ON public.weekly_submissions;
+CREATE POLICY "Project team and faculty view submissions"
+    ON public.weekly_submissions FOR SELECT
+    USING (has_project_access(auth.uid(), project_id));
+
+DROP POLICY IF EXISTS "Students insert own submissions" ON public.weekly_submissions;
+CREATE POLICY "Students insert own submissions"
+    ON public.weekly_submissions FOR INSERT
+    WITH CHECK (
+        has_project_access(auth.uid(), project_id)
+        AND student_id = auth.uid()
+    );
+
+DROP POLICY IF EXISTS "Only faculty mentors and owners review submissions" ON public.weekly_submissions;
+CREATE POLICY "Only faculty mentors and owners review submissions"
+    ON public.weekly_submissions FOR UPDATE
+    USING (
+        is_project_owner(auth.uid(), project_id)
+        OR EXISTS (
+            SELECT 1 FROM project_members pm
+            WHERE pm.project_id = weekly_submissions.project_id
+            AND pm.user_id = auth.uid()
+            AND (pm.system_role = 'mentor' OR pm.system_role = 'faculty')
+            AND pm.status = 'active'
+        )
+    )
+    WITH CHECK (
+        is_project_owner(auth.uid(), project_id)
+        OR EXISTS (
+            SELECT 1 FROM project_members pm
+            WHERE pm.project_id = weekly_submissions.project_id
+            AND pm.user_id = auth.uid()
+            AND (pm.system_role = 'mentor' OR pm.system_role = 'faculty')
+            AND pm.status = 'active'
+        )
+    );

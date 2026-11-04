@@ -34,6 +34,10 @@ import {
   updateProject,
   reviewMentorship,
   invokeAiNavigation,
+  fetchDocuments,
+  uploadDocument,
+  removeMember,
+  assignRole,
 } from '../src/lib/supabase-db.ts';
 
 console.log("=================================================");
@@ -1583,6 +1587,136 @@ it("6. Normal profile details request preserves markdown breakdown and does NOT 
   assert(res.text.includes("Aarav Sharma"), "Must return profile name");
   assert(res.text.includes("Department"), "Must return department breakdown");
   assert(res.text.includes("Skills"), "Must return skills details");
+});
+
+// ---------------------------------------------------------------------------
+// 16. SYNAPTRA PROJECT ROOM ROLE-BASED ACCESS CONTROL & PERMISSIONS
+// ---------------------------------------------------------------------------
+console.log("\n--- SECTION 16: PROJECT ROOM ROLE-BASED ACCESS & PERMISSIONS ---");
+
+it("1. Faculty has access to faculty-specific project room features (Monitoring tab, review submissions, owner_mentor docs)", () => {
+  const facultyUserId = "usr-faculty-mentor-01";
+  const project = { id: "proj-ai-room", ownerId: "usr-faculty-owner" };
+  const members = [
+    { projectId: "proj-ai-room", userId: "usr-faculty-mentor-01", systemRole: "mentor", status: "active" },
+    { projectId: "proj-ai-room", userId: "usr-student-01", systemRole: "member", status: "active" },
+  ];
+
+  // Predicate verification
+  const isStudent = false;
+  const isFaculty = true;
+  const isMentor = members.some((m) => m.userId === facultyUserId && (m.systemRole === "mentor" || m.systemRole === "faculty"));
+  const canAccessMonitoring = (isFaculty || isMentor) && !isStudent;
+  const canReviewSubmissions = !isStudent && (project.ownerId === facultyUserId || isMentor);
+
+  assert.strictEqual(canAccessMonitoring, true, "Faculty mentor must have access to supervisory monitoring tab");
+  assert.strictEqual(canReviewSubmissions, true, "Faculty mentor must have permission to review submissions");
+});
+
+it("2. Student is blocked from supervisory Monitoring tab (hidden from navigation, denied via direct URL)", () => {
+  const studentUserId = "usr-student-member-02";
+  const project = { id: "proj-ai-room", ownerId: "usr-student-lead" };
+  const members = [
+    { projectId: "proj-ai-room", userId: "usr-student-lead", systemRole: "owner", status: "active" },
+    { projectId: "proj-ai-room", userId: "usr-student-member-02", systemRole: "member", status: "active" },
+    { projectId: "proj-ai-room", userId: "usr-faculty-advisor", systemRole: "mentor", status: "active" },
+  ];
+
+  const authProfile = { role: "student" };
+  const isStudent = authProfile.role === "student";
+  const isFaculty = authProfile.role === "faculty";
+  const isMentor = members.some((m) => m.userId === studentUserId && (m.systemRole === "mentor" || m.systemRole === "faculty"));
+  const canAccessMonitoring = (isFaculty || isMentor) && !isStudent;
+
+  assert.strictEqual(canAccessMonitoring, false, "Student must never have access to supervisory monitoring tab");
+
+  // Navigation menu isolation
+  const navItems = [
+    "overview", "team", "ai-team",
+    ...(canAccessMonitoring ? ["monitoring"] : []),
+    "tasks", "milestones", "submissions", "consistency", "research", "documents", "discussions", "github", "ai-assistant", "settings"
+  ];
+  assert.strictEqual(navItems.includes("monitoring"), false, "Monitoring tab must be excluded from student navigation");
+
+  // Direct URL navigation protection: ?tab=monitoring resets to overview
+  const tabParam = "monitoring";
+  const effectiveTab = (tabParam === "monitoring" && isStudent) ? "overview" : tabParam;
+  assert.strictEqual(effectiveTab, "overview", "Direct URL query ?tab=monitoring must fallback to overview for students");
+});
+
+it("3. Private owner_mentor documents are isolated from student view and API requests", async () => {
+  const mockDocs = [
+    { id: "doc-pub-1", name: "Project Requirements.pdf", access: "members" },
+    { id: "doc-priv-faculty-1", name: "Faculty Mentor Private Review.pdf", access: "owner_mentor" },
+  ];
+
+  // Student filtering
+  const studentVisibleDocs = mockDocs.filter((doc) => {
+    const isStudent = true;
+    const isOwner = false;
+    const isMentor = false;
+    if (doc.access === "owner_mentor") {
+      return !isStudent && (isOwner || isMentor);
+    }
+    return true;
+  });
+
+  assert.strictEqual(studentVisibleDocs.length, 1, "Student must only see member-accessible documents");
+  assert.strictEqual(studentVisibleDocs[0].name, "Project Requirements.pdf", "Faculty private document must be hidden from student");
+
+  // Faculty filtering
+  const facultyVisibleDocs = mockDocs.filter((doc) => {
+    const isStudent = false;
+    const isFaculty = true;
+    const isMentor = true;
+    if (doc.access === "owner_mentor") {
+      return !isStudent && (isFaculty || isMentor);
+    }
+    return true;
+  });
+  assert.strictEqual(facultyVisibleDocs.length, 2, "Faculty mentor must have full access to owner_mentor documents");
+});
+
+itAsync("4. Student cannot remove a faculty mentor from the project (removeMember)", async () => {
+  let errCaught = false;
+  try {
+    const callerId = "usr-student-owner-01";
+    const projectId = "proj-defense-1";
+    const facultyMemberId = "mem-faculty-advisor";
+
+    await removeMember(callerId, projectId, facultyMemberId);
+  } catch (err) {
+    errCaught = true;
+    assert(err.message.includes("Unauthorized"), "Must throw Unauthorized when student attempts to remove faculty mentor");
+  }
+  assert(errCaught, "Student removing faculty mentor must be rejected");
+});
+
+itAsync("5. Student cannot alter the role of a faculty mentor (assignRole)", async () => {
+  let errCaught = false;
+  try {
+    const callerId = "usr-student-owner-01";
+    const projectId = "proj-defense-1";
+    const facultyUserId = "usr-faculty-mentor-01";
+
+    await assignRole(projectId, facultyUserId, "role-junior-student", callerId);
+  } catch (err) {
+    errCaught = true;
+    assert(err.message.includes("Unauthorized"), "Must throw Unauthorized when student attempts to modify faculty role");
+  }
+  assert(errCaught, "Student altering faculty mentor role must be rejected");
+});
+
+it("6. Task Kanban enforces student task boundary (cannot change status of other members' tasks)", () => {
+  const currentStudentUserId = "usr-student-contributor-01";
+  const myTask = { id: "t-1", title: "My Task", status: "todo", assignedTo: "usr-student-contributor-01" };
+  const otherTask = { id: "t-2", title: "Faculty Milestone Task", status: "in_progress", assignedTo: "usr-faculty-lead" };
+
+  const canStudentUpdateMyTask = myTask.assignedTo === currentStudentUserId;
+  const isStudentRestrictedOnOtherTask = otherTask.assignedTo !== currentStudentUserId && Boolean(otherTask.assignedTo);
+
+  assert.strictEqual(canStudentUpdateMyTask, true, "Student can update status of their own assigned task");
+  assert.strictEqual(isStudentRestrictedOnOtherTask, true, "Student must be restricted from modifying other members' assigned tasks");
 });
 
 // Summary

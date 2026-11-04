@@ -581,7 +581,7 @@ export function Dashboard() {
 
                         <div>
                           <h4 className="font-serif font-bold text-[#181B1F] text-base hover:text-[#8C6000] transition-colors leading-snug">
-                            <Link to={`/projects/${p.id}/room?tab=monitoring`}>{p.title}</Link>
+                            <Link to={`/projects/${p.id}/room`}>{p.title}</Link>
                           </h4>
                           <p className="text-xs text-[#5E646A] line-clamp-2 mt-1 leading-relaxed">{p.shortDescription}</p>
                         </div>

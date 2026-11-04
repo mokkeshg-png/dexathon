@@ -1,8 +1,8 @@
-/**
+﻿/**
  * supabase-db.ts
  * Supabase-backed data operations replacing localStorage store.ts.
  * All functions use the real Supabase client with RLS enforcement.
- * No service-role keys — frontend uses only the anon publishable key.
+ * No service-role keys â€” frontend uses only the anon publishable key.
  */
 
 import { supabase, isSupabaseConfigured } from "@/lib/supabase";
@@ -228,7 +228,7 @@ export function saveProfileMeta(
   } catch {}
 }
 
-/** Convert DB snake_case profile row → frontend Profile shape */
+/** Convert DB snake_case profile row â†’ frontend Profile shape */
 function rowToProfile(row: any, extras?: {
   skills?: any[];
   interests?: any[];
@@ -268,7 +268,9 @@ function rowToProfile(row: any, extras?: {
     id: row.id,
     userId: row.id, // profiles.id == auth.users.id
     email: row.email ?? "",
-    role: ((meta.role as Profile["role"]) || (row.role ?? "student")) as Profile["role"],
+    // SECURITY: Role comes EXCLUSIVELY from the DB column — localStorage meta.role is never trusted
+    role: (row.role ?? "student") as Profile["role"],
+    collegeId: row.college_id ?? undefined,
     fullName: row.full_name ?? "",
     headline: meta.headline,
     coverPhotoUrl: meta.coverPhotoUrl ? meta.coverPhotoUrl : undefined,
@@ -322,7 +324,7 @@ function rowToProfile(row: any, extras?: {
   return profile;
 }
 
-/** Convert DB project row + roles → frontend Project shape */
+/** Convert DB project row + roles â†’ frontend Project shape */
 function rowToProject(row: any, roles: any[] = []): Project {
   return {
     id: row.id,
@@ -477,10 +479,10 @@ export async function signUp(input: {
   if (error) throw new Error(error.message);
 
   const userId = data.user?.id;
-  if (!userId) throw new Error("Registration failed — no user ID returned.");
+  if (!userId) throw new Error("Registration failed â€” no user ID returned.");
 
   saveProfileMeta(userId, {
-    role: input.role,
+    // role is NOT stored in localStorage — it comes from the DB exclusively
     organizationName: input.organizationName,
     industryDomain: input.industryDomain,
     collegeCode: input.collegeCode,
@@ -634,7 +636,7 @@ export async function fetchProfile(userId: string): Promise<Profile | null> {
 }
 
 export async function fetchAllProfiles(): Promise<Profile[]> {
-  // Short-lived in-process cache (60 s) — avoids 5 Supabase queries × every page navigation
+  // Short-lived in-process cache (60 s) â€” avoids 5 Supabase queries Ã— every page navigation
   const now = Date.now();
   if (_profileCache && now - _profileCacheAt < 60_000) return _profileCache;
   if (_profilePromise) return _profilePromise;
@@ -683,7 +685,7 @@ export async function fetchAllProfiles(): Promise<Profile[]> {
   return _profilePromise;
 }
 
-/** Bust the in-process profile cache — call after any mutation that changes profile data */
+/** Bust the in-process profile cache â€” call after any mutation that changes profile data */
 export function bustProfileCache(userId?: string) {
   _profileCache = null;
   _profileCacheAt = 0;
@@ -726,7 +728,7 @@ export async function saveProfile(userId: string, patch: Partial<Profile>, calle
   if (patch.preferredRoles !== undefined) profileUpdate.preferred_roles = patch.preferredRoles;
   if (patch.programmingLanguages !== undefined) profileUpdate.programming_languages = patch.programmingLanguages;
 
-  // Recompute completeness if relevant fields changed — fetch once, reuse for return value
+  // Recompute completeness if relevant fields changed â€” fetch once, reuse for return value
   let currentProfile: Profile | null = null;
   if (Object.keys(profileUpdate).length > 0) {
     currentProfile = await fetchProfile(userId);
@@ -922,7 +924,7 @@ export async function saveProfile(userId: string, patch: Partial<Profile>, calle
 
   bustProfileCache(); // invalidate cached profiles after any profile mutation
   // Reuse already-fetched profile when available; only re-fetch if the update
-  // was skills/interests-only (no profileUpdate fields → currentProfile is null)
+  // was skills/interests-only (no profileUpdate fields â†’ currentProfile is null)
   return currentProfile ? fetchProfile(userId) : fetchProfile(userId);
 }
 
@@ -1246,7 +1248,7 @@ export async function fetchProjectMembers(projectId: string): Promise<ProjectMem
 }
 
 /**
- * Batch version — fetches active members for multiple projects in ONE query.
+ * Batch version â€” fetches active members for multiple projects in ONE query.
  * Returns a Map<projectId, ProjectMember[]> for O(1) look-up per project.
  */
 export async function fetchProjectMembersByProjects(
@@ -1289,6 +1291,27 @@ export async function removeMember(ownerId: string, projectId: string, memberId:
   const isOwner = await isProjectOwner(ownerId, projectId);
   if (!isOwner) throw new Error("Unauthorized: Only the project owner can remove members.");
 
+  // SECURITY: Students cannot remove a faculty mentor or supervisor from the project
+  const ownerProfile = await fetchProfile(ownerId);
+  if (ownerProfile?.role === "student") {
+    const { data: targetMem } = await supabase!
+      .from("project_members")
+      .select("user_id, system_role")
+      .eq("id", memberId)
+      .maybeSingle();
+
+    if (targetMem) {
+      const targetProfile = await fetchProfile(targetMem.user_id);
+      if (
+        targetMem.system_role === "mentor" ||
+        targetMem.system_role === "faculty" ||
+        targetProfile?.role === "faculty"
+      ) {
+        throw new Error("Unauthorized: Students cannot remove a faculty mentor from the project.");
+      }
+    }
+  }
+
   const { error } = await supabase!
     .from("project_members")
     .update({ status: "removed" })
@@ -1311,6 +1334,14 @@ export async function assignRole(projectId: string, memberUserId: string, roleId
   if (callerUserId) {
     const isOwner = await isProjectOwner(callerUserId, projectId);
     if (!isOwner) throw new Error("Unauthorized: Only the project owner can assign roles.");
+
+    const callerProfile = await fetchProfile(callerUserId);
+    if (callerProfile?.role === "student") {
+      const targetProfile = await fetchProfile(memberUserId);
+      if (targetProfile?.role === "faculty") {
+        throw new Error("Unauthorized: Students cannot alter the role of a faculty mentor.");
+      }
+    }
   }
   const { error } = await supabase!
     .from("project_members")
@@ -2000,7 +2031,7 @@ export async function fetchTaskComments(taskId: string): Promise<TaskComment[]> 
 
 /**
  * Batch fetch all comments for multiple tasks in one query.
- * Replaces the N×fetchTaskComments loop in ProjectRoom.
+ * Replaces the NÃ—fetchTaskComments loop in ProjectRoom.
  */
 export async function fetchTaskCommentsByProject(taskIds: string[]): Promise<TaskComment[]> {
   if (taskIds.length === 0) return [];
@@ -2180,18 +2211,37 @@ export async function addDataset(userId: string, projectId: string, data: { name
 // DOCUMENTS (Supabase Storage)
 // ---------------------------------------------------------------------------
 
-export async function fetchDocuments(projectId: string): Promise<DocumentItem[]> {
+export async function fetchDocuments(
+  projectId: string,
+  callerUserId?: string,
+  callerRole?: string
+): Promise<DocumentItem[]> {
   const { data } = await supabase!.from("documents").select("*").eq("project_id", projectId).order("created_at", { ascending: false });
-  return (data ?? []).map((r: any) => ({
+  const allDocs = (data ?? []).map((r: any) => ({
     id: r.id, projectId: r.project_id,
     name: r.file_name, type: r.file_type, size: r.file_size,
     dataUrl: r.storage_path, // used as identifier; real URL fetched on-demand
     access: (r.access === "project_members" ? "members" : "owner_mentor") as DocumentAccess,
     uploadedBy: r.uploader_id, createdAt: r.created_at,
   }));
+
+  // SECURITY: Students who are not project owners or mentors cannot view owner_mentor documents
+  if (callerUserId && callerRole === "student") {
+    const isOwner = await isProjectOwner(callerUserId, projectId);
+    const isMentor = await isProjectMentor(callerUserId, projectId);
+    if (!isOwner && !isMentor) {
+      return allDocs.filter((d) => d.access !== "owner_mentor");
+    }
+  }
+
+  return allDocs;
 }
 
-export async function getDocumentUrl(storagePath: string): Promise<string> {
+export async function getDocumentUrl(
+  storagePath: string,
+  _callerUserId?: string,
+  _callerRole?: string
+): Promise<string> {
   const { data } = await supabase!.storage.from("documents").createSignedUrl(storagePath, 3600);
   return data?.signedUrl ?? "";
 }
@@ -2199,11 +2249,23 @@ export async function getDocumentUrl(storagePath: string): Promise<string> {
 export async function uploadDocument(
   userId: string,
   projectId: string,
-  file: { name: string; type: string; size: number; blob: File; access: DocumentAccess }
+  file: { name: string; type: string; size: number; blob: File; access: DocumentAccess },
+  callerRole?: string
 ) {
   const canAccess = await canAccessRoom(userId, projectId);
   if (!canAccess) {
     throw new Error("Unauthorized: Only active project members or mentors can upload documents.");
+  }
+
+  // SECURITY: Students cannot upload owner_mentor documents unless they are the verified project owner
+  const uploaderProfile = await fetchProfile(userId);
+  const effectiveRole = callerRole || uploaderProfile?.role;
+  const isOwner = await isProjectOwner(userId, projectId);
+  const isMentor = await isProjectMentor(userId, projectId);
+
+  let effectiveAccess = file.access;
+  if (effectiveRole === "student" && !isOwner && !isMentor && file.access === "owner_mentor") {
+    effectiveAccess = "members";
   }
 
   const safeName = `${projectId}/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
@@ -2214,7 +2276,7 @@ export async function uploadDocument(
 
   if (uploadError) throw new Error(uploadError.message);
 
-  const dbAccess = file.access === "members" ? "project_members" : "mentor_owner";
+  const dbAccess = effectiveAccess === "members" ? "project_members" : "mentor_owner";
 
   const { error: dbError } = await supabase!.from("documents").insert({
     project_id: projectId,
@@ -2310,7 +2372,7 @@ export async function fetchNotifications(userId: string): Promise<Notification[]
   return (data ?? []).map(rowToNotification);
 }
 
-/** Internal helper — inserts a notification row (allowed by RLS "Authenticated can create notifications") */
+/** Internal helper â€” inserts a notification row (allowed by RLS "Authenticated can create notifications") */
 export async function insertNotification(n: {
   userId: string;
   type: NotificationType;
@@ -3156,7 +3218,7 @@ export async function saveSkillScoreLocally(
 }
 
 // ---------------------------------------------------------------------------
-// Internal helper: DB row → SkillScoreRecord
+// Internal helper: DB row â†’ SkillScoreRecord
 // ---------------------------------------------------------------------------
 
 function rowToSkillScoreRecord(row: any): SkillScoreRecord {
@@ -3188,7 +3250,7 @@ const DEFAULT_POSTS: PortfolioPost[] = [
     authorInstitution: "Birla Institute of Technology and Science",
     authorDepartment: "Computer Science and Engineering",
     category: "project_showcase",
-    content: "🚀 Excited to announce that we've deployed the initial milestone for our AI-Powered Plant Disease Classifier! Built with React, PyTorch, and Supabase. The model achieves 94.2% top-1 accuracy on leaf blight detection.\n\nLooking for research collaborators with experience in embedded edge deployment (TensorRT/ONNX). Check out the live repository below! #ArtificialIntelligence #ComputerVision #Research",
+    content: "ðŸš€ Excited to announce that we've deployed the initial milestone for our AI-Powered Plant Disease Classifier! Built with React, PyTorch, and Supabase. The model achieves 94.2% top-1 accuracy on leaf blight detection.\n\nLooking for research collaborators with experience in embedded edge deployment (TensorRT/ONNX). Check out the live repository below! #ArtificialIntelligence #ComputerVision #Research",
     mediaUrls: [
       "https://images.unsplash.com/photo-1555949963-aa79dcee981c?auto=format&fit=crop&w=1200&q=80",
     ],
@@ -3221,7 +3283,7 @@ const DEFAULT_POSTS: PortfolioPost[] = [
     authorInstitution: "Birla Institute of Technology and Science",
     authorDepartment: "Computer Science and Engineering",
     category: "certificate",
-    content: "📜 Verified credential: Deep Learning Specialization by DeepLearning.AI & Coursera. Covered Convolutional Neural Networks, Sequence Models, and Transformer Architectures with hands-on lab benchmarks. #DeepLearning #ContinuousLearning #AI",
+    content: "ðŸ“œ Verified credential: Deep Learning Specialization by DeepLearning.AI & Coursera. Covered Convolutional Neural Networks, Sequence Models, and Transformer Architectures with hands-on lab benchmarks. #DeepLearning #ContinuousLearning #AI",
     certificateRef: {
       title: "Deep Learning Specialization",
       issuer: "DeepLearning.AI / Coursera",
@@ -4060,7 +4122,7 @@ export async function runTechnicalConsistencyCheck(
       severity: "critical",
       title: "Frontend Authentication Route Does Not Match Backend Endpoint Specification",
       evidence: "Client components invoke `POST /api/v1/auth/login` expecting `{ token, user }`, whereas backend controller specification defines `POST /api/auth/token` returning `{ access_token, token_type }`.",
-      affectedComponent: "src/api/auth.ts ↔ controllers/auth_controller.py",
+      affectedComponent: "src/api/auth.ts â†” controllers/auth_controller.py",
       suggestedAction: "Align the authentication URI and return schema to RFC 6749 bearer token standards or update client HTTP service.",
       isVerifiedFailure: true,
       detectedAt: now,
@@ -4075,7 +4137,7 @@ export async function runTechnicalConsistencyCheck(
     severity: "warning",
     title: "Inconsistent User Profile Schema Contract Between Frontend & Database Schema",
     evidence: "Frontend type interfaces require `department` and `academicYear` fields, while database migration schema enforces `dept_code` and `year_of_study` integer types.",
-    affectedComponent: "types/user.ts ↔ schema.sql",
+    affectedComponent: "types/user.ts â†” schema.sql",
     suggestedAction: "Add an ORM/client transformation mapper or normalize attribute naming in the API response serializers.",
     isVerifiedFailure: false,
     detectedAt: now,
@@ -4303,5 +4365,6 @@ export async function createAcademicMiniProject(
 
   return newProject;
 }
+
 
 

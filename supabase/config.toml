@@ -1,19 +1,19 @@
-
+﻿
 [functions.analyze-project-fit]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 import_map = "./functions/analyze-project-fit/deno.json"
 entrypoint = "./functions/analyze-project-fit/index.ts"
 
 [functions.analyze-skill-score]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 import_map = "./functions/analyze-skill-score/deno.json"
 entrypoint = "./functions/analyze-skill-score/index.ts"
 
 [functions.ai-navigation]
 enabled = true
-verify_jwt = false
+verify_jwt = true
 import_map = "./functions/ai-navigation/deno.json"
 entrypoint = "./functions/ai-navigation/index.ts"
 
@@ -21,4 +21,5 @@ entrypoint = "./functions/ai-navigation/index.ts"
 enabled = false
 verify_jwt = false
 entrypoint = "./functions/setup-rls-fixes/index.ts"
+
 

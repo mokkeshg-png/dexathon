@@ -158,14 +158,30 @@ export function ProjectRoom() {
   const [dataLoading, setDataLoading] = useState(true);
   const [hasAccess, setHasAccess] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<RoomTab>(tabParam || "overview");
+  const isStudent = authProfile?.role === "student";
+  const isFaculty = authProfile?.role === "faculty";
+  const isOwner = Boolean(user && project && user.id === project.ownerId);
+  const isMentor = Boolean(user && members.some(
+    (m: any) => m.userId === user.id && (m.systemRole === "mentor" || m.systemRole === "faculty")
+  ));
+  // Faculty mentors, faculty owners, or assigned mentors can access supervisory telemetry & monitoring
+  const canAccessMonitoring = (isFaculty || isMentor) && !isStudent;
+  const canReviewSubmissions = !isStudent && (isOwner || isMentor);
+
+  const initialTab: RoomTab = (tabParam === "monitoring" && isStudent) ? "overview" : (tabParam || "overview");
+  const [activeTab, setActiveTab] = useState<RoomTab>(initialTab);
   const [researchSubTab, setResearchSubTab] = useState<"notes"|"references"|"experiments"|"meetings"|"datasets">("notes");
 
   useEffect(() => {
-    if (tabParam && tabParam !== activeTab) {
-      setActiveTab(tabParam);
+    if (tabParam) {
+      if (tabParam === "monitoring" && isStudent) {
+        toast.error("Access Denied", "Project Monitoring & Intelligence is restricted to faculty mentors.");
+        setActiveTab("overview");
+      } else if (tabParam !== activeTab) {
+        setActiveTab(tabParam);
+      }
     }
-  }, [tabParam]);
+  }, [tabParam, isStudent]);
 
   const loadAll = useCallback(async () => {
     if (!id) {
@@ -396,6 +412,17 @@ export function ProjectRoom() {
     });
   }, [project, members, allProfiles, projectTasks, taskComments, projectDiscussions, discussionReplies, projectDocs, projectNotes]);
 
+  // Filter documents: students cannot view owner_mentor (faculty mentor only) documents
+  // CRITICAL: MUST be placed BEFORE dataLoading / early returns to adhere to React Rules of Hooks!
+  const visibleDocs = useMemo(() => {
+    return projectDocs.filter((doc: any) => {
+      if (doc.access === "owner_mentor") {
+        return !isStudent && (isOwner || isFaculty || isMentor);
+      }
+      return true;
+    });
+  }, [projectDocs, isStudent, isOwner, isFaculty, isMentor]);
+
   if (dataLoading) {
     return <div className="flex h-96 items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-navy" /></div>;
   }
@@ -421,7 +448,6 @@ export function ProjectRoom() {
     );
   }
 
-  const isOwner = user.id === project.ownerId;
   const ownerProfile = allProfiles.find((p: any) => p.userId === project.ownerId);
 
   // Active Team members
@@ -576,9 +602,10 @@ export function ProjectRoom() {
     if (!docFile) { toast.warning("Please select a file to upload."); return; }
     setDocUploading(true);
     try {
+      const safeAccess: DocumentAccess = (isStudent && docAccess === "owner_mentor") ? "members" : docAccess;
       await uploadDocument(user.id, project.id, {
         name: docFile.name, type: docFile.type, size: docFile.size,
-        blob: docFile, access: docAccess,
+        blob: docFile, access: safeAccess,
       });
       await refresh();
       setDocModalOpen(false);
@@ -636,11 +663,23 @@ export function ProjectRoom() {
   };
 
   const handleAssignRole = async (memberUserId: string, roleId: string) => {
-    await assignRole(project.id, memberUserId, roleId);
+    const targetMember = members.find((m: any) => m.userId === memberUserId);
+    const targetProfile = allProfiles.find((p: any) => p.userId === memberUserId);
+    if (isStudent && (targetMember?.systemRole === "mentor" || targetProfile?.role === "faculty")) {
+      toast.error("Permission Denied", "Students cannot modify the role of a faculty mentor.");
+      return;
+    }
+    await assignRole(project.id, memberUserId, roleId, user.id);
     await refresh();
   };
 
   const handleRemoveMember = async (memberId: string, memberName: string) => {
+    const targetMember = members.find((m: any) => m.id === memberId);
+    const targetProfile = allProfiles.find((p: any) => p.userId === targetMember?.userId);
+    if (isStudent && (targetMember?.systemRole === "mentor" || targetProfile?.role === "faculty")) {
+      toast.error("Permission Denied", "Students cannot remove a faculty mentor from the project.");
+      return;
+    }
     if (confirm(`Remove ${memberName} from project?`)) {
       await removeMember(user.id, project.id, memberId);
       await refresh();
@@ -699,6 +738,10 @@ export function ProjectRoom() {
   const handleSaveFacultyFeedback = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedSubForFeedback || !feedbackText.trim() || !id || !user) return;
+    if (isStudent || !canReviewSubmissions) {
+      toast.error("Unauthorized", "Students cannot submit faculty reviews or academic guidance.");
+      return;
+    }
     setSubmittingFeedback(true);
     try {
       await reviewWeeklySubmission(selectedSubForFeedback.id, id, user.id, feedbackText.trim(), reviewDecision);
@@ -758,7 +801,7 @@ export function ProjectRoom() {
       if (q.includes("status") || q.includes("progress")) {
         response = `📊 Project "${project.title}" Status Summary:\n• Overall Milestone Progress: ${taskProgress}%\n• Tasks: ${completedTasks.length}/${projectTasks.length} tasks completed\n• Team size: ${teamMembers.length + 1}/${project.teamMax} collaborators\n• Research Notes: ${projectNotes.length} notes recorded\n• Next target: ${projectMilestones[0]?.title || "Baseline execution"}`;
       } else if (q.includes("gap") || q.includes("bottleneck") || q.includes("skill")) {
-        response = `⚠️ Team Skill-Gap Analysis:\n• Required Skills: ${project.requiredSkills.join(", ")}\n• Identified Gap: ${skillGapAnalysis.gaps.length > 0 ? skillGapAnalysis.gaps.map((g) => g.skill).join(", ") : "All core skills covered!"}\n• Recommendations available in the AI Team Formation tab.`;
+        response = `⚠️ Team Skill-Gap Analysis:\n• Required Skills: ${(project.requiredSkills || []).join(", ")}\n• Identified Gap: ${skillGapAnalysis.gaps.length > 0 ? skillGapAnalysis.gaps.map((g) => g.skill).join(", ") : "All core skills covered!"}\n• Recommendations available in the AI Team Formation tab.`;
       } else if (q.includes("next step") || q.includes("recommend") || q.includes("what to do")) {
         response = `🎯 Recommended Next Research Actions:\n1. Advance task "${projectTasks.find((t) => t.status === "in_progress")?.title || "Active experimentation"}"\n2. Consolidate literature review notes in the Research Workspace\n3. Schedule lab review with faculty mentor to align on paper submission venue.`;
       } else {
@@ -773,19 +816,23 @@ export function ProjectRoom() {
     }, 800);
   };
 
-  // Nav Items configuration per PRD Section 28.2
+  // Nav Items configuration per PRD Section 28.2 & Role-Based Permissions
   const navItems = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "team", label: "Team & Roles", icon: Users, badge: teamMembers.length + 1 },
     { id: "ai-team", label: "AI Team Formation", icon: Sparkles },
-    {
-      id: "monitoring",
-      label: "Monitoring & Insights",
-      icon: Activity,
-      badge: monitoringAnalysis?.collaborationGaps.length
-        ? `${monitoringAnalysis.collaborationGaps.length} gaps`
-        : undefined,
-    },
+    ...(canAccessMonitoring
+      ? [
+          {
+            id: "monitoring",
+            label: "Monitoring & Insights",
+            icon: Activity,
+            badge: monitoringAnalysis?.collaborationGaps.length
+              ? `${monitoringAnalysis.collaborationGaps.length} gaps`
+              : undefined,
+          },
+        ]
+      : []),
     { id: "tasks", label: "Tasks (Kanban)", icon: CheckSquare, badge: projectTasks.length },
     { id: "milestones", label: "Milestones", icon: Milestone, badge: projectMilestones.length },
     {
@@ -803,7 +850,7 @@ export function ProjectRoom() {
         : undefined,
     },
     { id: "research", label: "Research Workspace", icon: BookOpen, badge: projectNotes.length + projectReferences.length },
-    { id: "documents", label: "Documents", icon: FolderArchive, badge: projectDocs.length },
+    { id: "documents", label: "Documents", icon: FolderArchive, badge: visibleDocs.length },
     { id: "discussions", label: "Discussions", icon: MessageSquare, badge: projectDiscussions.length },
     { id: "github", label: "GitHub Integration", icon: GitBranch },
     { id: "ai-assistant", label: "AI Assistant", icon: Bot },
@@ -1037,9 +1084,11 @@ export function ProjectRoom() {
                           {monitoringAnalysis.healthScore}<span className="text-sm font-normal text-ink-400">/100</span>
                         </p>
                       </div>
-                      <Button size="sm" onClick={() => setActiveTab("monitoring")}>
-                        View Monitoring Details →
-                      </Button>
+                      {canAccessMonitoring && (
+                        <Button size="sm" onClick={() => setActiveTab("monitoring")}>
+                          View Monitoring Details →
+                        </Button>
+                      )}
                     </div>
                   </div>
 
@@ -1203,29 +1252,39 @@ export function ProjectRoom() {
                       </div>
                     </div>
 
-                    {/* Member actions (Owner only) */}
-                    {isOwner && member.userId !== user.id && (
-                      <div className="flex items-center gap-2">
-                        <Select
-                          className="h-8 text-xs w-36"
-                          value={member.roleId || ""}
-                          onChange={(e) => handleAssignRole(member.userId, e.target.value)}
-                        >
-                          <option value="">Assign Role...</option>
-                          {project.roles.map((r: any) => (
-                            <option key={r.id} value={r.id}>{r.name}</option>
-                          ))}
-                        </Select>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleRemoveMember(member.id, p?.fullName || "member")}
-                          className="text-red-700 text-xs hover:bg-red-50"
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    )}
+                    {/* Member actions (Owner only, but students cannot remove or reassign faculty mentors) */}
+                    {isOwner && member.userId !== user.id && (() => {
+                      const isTargetFaculty = member.systemRole === "mentor" || member.systemRole === "faculty" || p?.role === "faculty";
+                      if (isStudent && isTargetFaculty) {
+                        return (
+                          <div className="flex items-center gap-2">
+                            <span className="clay-badge-gold text-[10px] font-bold">Faculty Advisor</span>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="flex items-center gap-2">
+                          <Select
+                            className="h-8 text-xs w-36"
+                            value={member.roleId || ""}
+                            onChange={(e) => handleAssignRole(member.userId, e.target.value)}
+                          >
+                            <option value="">Assign Role...</option>
+                            {project.roles?.map((r: any) => (
+                              <option key={r.id} value={r.id}>{r.name}</option>
+                            ))}
+                          </Select>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleRemoveMember(member.id, p?.fullName || "member")}
+                            className="text-red-700 text-xs hover:bg-red-50"
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
@@ -1333,8 +1392,8 @@ export function ProjectRoom() {
             </div>
           )}
 
-          {/* TAB: PROJECT MONITORING & INTELLIGENCE (PRD 1 Modules 1-10) */}
-          {activeTab === "monitoring" && monitoringAnalysis && (
+          {/* TAB: PROJECT MONITORING & INTELLIGENCE (PRD 1 Modules 1-10) - Strictly Faculty Mentors */}
+          {activeTab === "monitoring" && canAccessMonitoring && monitoringAnalysis && (
             <div className="space-y-6">
               <div>
                 <div className="flex items-center gap-2">
@@ -1349,6 +1408,20 @@ export function ProjectRoom() {
               </div>
 
               <ProjectMonitoringPanel analysis={monitoringAnalysis} />
+            </div>
+          )}
+          {activeTab === "monitoring" && !canAccessMonitoring && (
+            <div className="clay-card p-8 text-center space-y-3">
+              <div className="rounded-full bg-amber-100 p-3 text-amber-800 w-12 h-12 mx-auto flex items-center justify-center">
+                <Shield className="h-6 w-6" />
+              </div>
+              <h3 className="font-serif text-lg font-bold text-ink">Faculty Mentorship Restricted</h3>
+              <p className="text-xs text-ink-500 max-w-md mx-auto">
+                Detailed project telemetry, individual member contribution indices, and supervisory insights are strictly reserved for faculty mentors and academic supervisors.
+              </p>
+              <Button size="sm" onClick={() => setActiveTab("overview")}>
+                Return to Overview
+              </Button>
             </div>
           )}
 
@@ -1411,9 +1484,19 @@ export function ProjectRoom() {
                                 </span>
 
                                 <select
+                                  disabled={isStudent && !isOwner && task.assignedTo !== user.id && task.createdBy !== user.id && Boolean(task.assignedTo)}
                                   value={task.status}
                                   onChange={(e) => handleStatusChange(task.id, e.target.value as TaskStatus)}
-                                  className="text-[10px] font-bold border border-[#ECE5D8] rounded-lg px-2 py-0.5 bg-[#FAF7EE] text-[#181B1F] cursor-pointer"
+                                  className={`text-[10px] font-bold border border-[#ECE5D8] rounded-lg px-2 py-0.5 bg-[#FAF7EE] text-[#181B1F] ${
+                                    isStudent && !isOwner && task.assignedTo !== user.id && task.createdBy !== user.id && Boolean(task.assignedTo)
+                                      ? "opacity-60 cursor-not-allowed"
+                                      : "cursor-pointer"
+                                  }`}
+                                  title={
+                                    isStudent && !isOwner && task.assignedTo !== user.id && task.createdBy !== user.id && Boolean(task.assignedTo)
+                                      ? "Only the assigned collaborator or project lead can update status."
+                                      : "Change task status"
+                                  }
                                 >
                                   <option value="todo">To Do</option>
                                   <option value="in_progress">In Prog</option>
@@ -1545,8 +1628,7 @@ export function ProjectRoom() {
                 <div className="space-y-4">
                   {weeklySubmissions.map((sub) => {
                     const isMySub = sub.studentId === user.id;
-                    const isStudent = authProfile?.role === "student";
-                    const canReview = !isStudent && (isOwner || members.some((m: any) => m.userId === user.id && m.systemRole === "mentor"));
+                    const canReview = canReviewSubmissions;
 
                     return (
                       <div key={sub.id} className="clay-card p-5 space-y-4">
@@ -2054,7 +2136,7 @@ export function ProjectRoom() {
                 </Button>
               </div>
 
-              {projectDocs.length === 0 ? (
+              {visibleDocs.length === 0 ? (
                 <EmptyState title="No documents uploaded yet" body="Upload research papers, reports, design specs, and project deliverables." action={<Button size="sm" onClick={() => setDocModalOpen(true)}><Plus className="h-4 w-4 mr-1" /> Upload Document</Button>} />
               ) : (
               <div className="overflow-hidden rounded-xl border border-ink-100 bg-white shadow-sm">
@@ -2069,7 +2151,7 @@ export function ProjectRoom() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-ink-50 text-ink-700">
-                    {projectDocs.map((doc) => (
+                    {visibleDocs.map((doc: any) => (
                       <tr key={doc.id} className="hover:bg-paper-50/50">
                         <td className="px-4 py-3 font-semibold text-ink flex items-center gap-2">
                           <FileText className="h-4 w-4 text-navy" />
@@ -2869,7 +2951,9 @@ export function ProjectRoom() {
               onChange={(e) => setDocAccess(e.target.value as DocumentAccess)}
             >
               <option value="members">All Project Members</option>
-              <option value="owner_mentor">Owner & Mentor Only</option>
+              {!isStudent && (isOwner || isFaculty || isMentor) && (
+                <option value="owner_mentor">Owner & Mentor Only (Faculty / Lead)</option>
+              )}
             </Select>
           </Field>
           <div className="flex justify-end gap-2 pt-2">

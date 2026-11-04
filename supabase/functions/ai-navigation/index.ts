@@ -1,4 +1,4 @@
-import "@supabase/functions-js/edge-runtime.d.ts";
+﻿import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "npm:@supabase/server";
 import { createClient } from "npm:@supabase/supabase-js@^2";
 
@@ -80,6 +80,15 @@ export default {
         if (callerProfile.status === "suspended") {
           return jsonResponse(
             { error: "Forbidden: Your account is suspended." },
+            403
+          );
+        }
+
+        // Role authorization check — student and faculty only
+        const ALLOWED_ROLES = ["student", "faculty"];
+        if (!ALLOWED_ROLES.includes(callerProfile.role)) {
+          return jsonResponse(
+            { error: "Forbidden: Your role does not have access to AI navigation." },
             403
           );
         }
@@ -239,3 +248,4 @@ export default {
     }
   ),
 };
+

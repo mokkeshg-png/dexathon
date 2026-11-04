@@ -1,4 +1,4 @@
-import "@supabase/functions-js/edge-runtime.d.ts";
+﻿import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "npm:@supabase/server";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
@@ -41,7 +41,7 @@ function sanitizeForAI(value: unknown): unknown {
 
   if (typeof value === "string") {
     return value.length > MAX_STRING_LENGTH
-      ? `${value.slice(0, MAX_STRING_LENGTH)}…`
+      ? `${value.slice(0, MAX_STRING_LENGTH)}â€¦`
       : value;
   }
 

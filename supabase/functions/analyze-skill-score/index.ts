@@ -1,5 +1,5 @@
-/**
- * analyze-skill-score — Supabase Edge Function
+﻿/**
+ * analyze-skill-score â€” Supabase Edge Function
  *
  * PURPOSE:
  *   Server-side handler for the AI Student Skill Intelligence & Score Engine.
@@ -16,11 +16,11 @@
  *   - Requires a valid authenticated session (Supabase Auth JWT).
  *   - Uses the admin client ONLY after verifying the caller's identity.
  *   - No API keys, GitHub tokens, or PII are returned in the response.
- *   - Score is validated: 0 ≤ overall_score ≤ 100 before persistence.
+ *   - Score is validated: 0 â‰¤ overall_score â‰¤ 100 before persistence.
  *   - Only reads and writes rows belonging to the authenticated user.
  *
  * REQUEST:  POST /functions/v1/analyze-skill-score
- *   Body: {} (empty — all data is loaded from the authenticated user's profile)
+ *   Body: {} (empty â€” all data is loaded from the authenticated user's profile)
  *   Optional body: { "github_public_repos": number }
  *     Pass this if the frontend has already fetched the live GitHub repo count.
  *
@@ -33,7 +33,7 @@
 import "@supabase/functions-js/edge-runtime.d.ts";
 import { withSupabase } from "npm:@supabase/server";
 
-// ── Constants ──────────────────────────────────────────────────────────────
+// â”€â”€ Constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ENGINE_VERSION = "skill-engine-v1";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
@@ -46,7 +46,7 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-// ── Gemini AI Qualitative Analysis ─────────────────────────────────────────
+// â”€â”€ Gemini AI Qualitative Analysis â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function generateGeminiSkillInsights(
   fullName: string,
@@ -125,7 +125,7 @@ Return ONLY a valid JSON object matching this structure:
   return null;
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 type JsonRecord = Record<string, unknown>;
 
@@ -144,7 +144,7 @@ function clamp(n: number): number {
   return Math.round(Math.max(0, Math.min(100, n)));
 }
 
-// ── Scoring logic (mirrors src/lib/skillScoreEngine.ts — server copy) ──────
+// â”€â”€ Scoring logic (mirrors src/lib/skillScoreEngine.ts â€” server copy) â”€â”€â”€â”€â”€â”€
 //
 // The Edge Function cannot import from src/ (Vite project), so the scoring
 // logic is self-contained here. It is the same algorithm as the client-side
@@ -260,8 +260,8 @@ function analyzeSkillEvidence(
     supporting.push(`Listed research interest: "${relInterests[0]}"`);
   }
 
-  // Evidence source count — resumeUrl is soft corroborator, repo count
-  // doubles GitHub's weight when confirmed active (≥5 repos)
+  // Evidence source count â€” resumeUrl is soft corroborator, repo count
+  // doubles GitHub's weight when confirmed active (â‰¥5 repos)
   const hasGithub = githubConnected || Boolean(githubUsername);
   const hasResume = Boolean(resumeUrl);
   const githubWeight = hasGithub && githubPublicRepos !== undefined && githubPublicRepos >= 5 ? 2 : hasGithub ? 1 : 0;
@@ -538,7 +538,7 @@ async function computeScore(
 
   const skillNames = skills.map((s: any) => s.skills?.name ?? s.name ?? "").filter(Boolean);
 
-  // Per-skill evidence — now includes resumeUrl + githubPublicRepos
+  // Per-skill evidence â€” now includes resumeUrl + githubPublicRepos
   const skillItems: SkillEvidenceItem[] = skills.map((s: any) => {
     const name: string = s.skills?.name ?? s.name ?? "";
     const prof: Proficiency = (s.proficiency as Proficiency) ?? "intermediate";
@@ -627,7 +627,7 @@ function validateAnalysis(analysis: SkillScoreAnalysis): void {
   }
 }
 
-// ── Edge Function Handler ─────────────────────────────────────────────────
+// â”€â”€ Edge Function Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export default {
   fetch: withSupabase(
@@ -643,7 +643,7 @@ export default {
       }
 
       try {
-        // ── 1. Authenticate ─────────────────────────────────────────────
+        // â”€â”€ 1. Authenticate â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const userId = ctx.userClaims?.sub ?? ctx.userClaims?.id;
         if (!userId) {
           return jsonResponse({ error: "Authenticated user not found." }, 401);
@@ -663,7 +663,7 @@ export default {
         // Use admin client after auth verification
         const supabase = ctx.supabaseAdmin;
 
-        // ── 2. Verify profile exists ────────────────────────────────────
+        // â”€â”€ 2. Verify profile exists â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const { data: profile, error: profileErr } = await supabase
           .from("profiles")
           .select("*")
@@ -678,7 +678,7 @@ export default {
           return jsonResponse({ error: "No profile exists for the authenticated user." }, 403);
         }
 
-        // ── 3. Load all evidence sources in parallel ────────────────────
+        // â”€â”€ 3. Load all evidence sources in parallel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const [
           skillsRes,
           interestsRes,
@@ -712,7 +712,7 @@ export default {
           (i: any) => i.research_interests?.name ?? ""
         ).filter(Boolean);
 
-        // ── 4. Compute skill score ──────────────────────────────────────
+        // â”€â”€ 4. Compute skill score â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const analysis = await computeScore(
           profile,
           studentProfileRes.data,
@@ -725,7 +725,7 @@ export default {
           githubPublicRepos
         );
 
-        // ── 5. Validate result ──────────────────────────────────────────
+        // â”€â”€ 5. Validate result â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         try {
           validateAnalysis(analysis);
         } catch (validErr) {
@@ -733,7 +733,7 @@ export default {
           return jsonResponse({ error: "Score validation failed. Please try again." }, 500);
         }
 
-        // ── 6. Persist to student_skill_scores ──────────────────────────
+        // â”€â”€ 6. Persist to student_skill_scores â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const { data: saved, error: insertErr } = await supabase
           .from("student_skill_scores")
           .insert({
@@ -756,7 +756,7 @@ export default {
 
         if (insertErr) {
           console.error("Insert error:", insertErr.message);
-          // Return the computed analysis even if saving failed — don't block the user
+          // Return the computed analysis even if saving failed â€” don't block the user
           return jsonResponse({
             success: true,
             analysis: { id: null, profileId: userId, ...analysis },
@@ -764,7 +764,7 @@ export default {
           });
         }
 
-        // ── 7. Return saved record ──────────────────────────────────────
+        // â”€â”€ 7. Return saved record â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         return jsonResponse({
           success: true,
           analysis: {
@@ -796,3 +796,4 @@ export default {
     }
   ),
 };
+
