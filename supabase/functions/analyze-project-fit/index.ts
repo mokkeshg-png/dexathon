@@ -401,16 +401,13 @@ ${JSON.stringify(inputContext)}
         continue;
       }
 
-      const text =
-        (
-          geminiData.candidates as Array<JsonRecord> | undefined
-        )?.[0]?.content &&
-        (
-          (
-            geminiData.candidates as Array<JsonRecord>
-          )[0].content as JsonRecord
-        ).parts as Array<JsonRecord> | undefined
-        )?.[0]?.text;
+      const text = (() => {
+        const candidates = geminiData.candidates as Array<JsonRecord> | undefined;
+        const content = candidates?.[0]?.content as JsonRecord | undefined;
+        if (!content) return undefined;
+        const parts = (content).parts as Array<JsonRecord> | undefined;
+        return parts?.[0]?.text;
+      })();
 
       if (typeof text !== "string") {
         console.error(

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
-import { fetchAllProfiles, fetchProjects } from "@/lib/supabase-db";
+import { fetchAllProfiles, fetchProjects, invokeAiNavigation } from "@/lib/supabase-db";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Card";
 import type { Profile, Project } from "@/types";
@@ -37,6 +37,7 @@ function formatUid(p: Profile) {
 
 export function AiAssistant() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -142,10 +143,48 @@ export function AiAssistant() {
       }
 
       // Process query using the intelligent campus engine
-      setTimeout(() => {
+      setTimeout(async () => {
         try {
           const result = processCampusQuery(text, pfs, pjs, profile ?? null, conversationContext);
           setConversationContext(result.contextUpdate);
+
+          // Direct Navigation Handler (Req 6, 7 & 8)
+          if (result.navigation && result.navigation.type === "navigate" && result.navigation.route) {
+            let targetRoute = result.navigation.route;
+            let targetLabel = result.navigation.label;
+
+            // Secure validation via Edge Function (ai-navigation) with deterministic fallback
+            try {
+              const verified = await invokeAiNavigation({
+                target: result.navigation.entity?.name || text,
+                id: result.navigation.entity?.id,
+                entityType: result.navigation.entity?.type as any,
+              });
+              if (verified && verified.route) {
+                targetRoute = verified.route;
+                targetLabel = verified.label;
+              }
+            } catch (navErr) {
+              console.warn("Direct navigation verification fallback:", navErr);
+            }
+
+            // Verify route matches allowed internal paths (/profile/:id or /projects/:id)
+            if (/^\/(profile|projects)\/[a-zA-Z0-9_-]+(\?.*)?$/.test(targetRoute)) {
+              // Execute direct navigation using React Router
+              navigate(targetRoute);
+              // Close AI modal after navigation
+              setIsOpen(false);
+
+              const aiMsg: ChatMessage = {
+                id: (Date.now() + 1).toString(),
+                sender: "ai",
+                text: `Navigating directly to ${targetLabel}...`,
+                timestamp: new Date(),
+              };
+              setMessages((prev) => [...prev, aiMsg]);
+              return;
+            }
+          }
 
           const aiMsg: ChatMessage = {
             id: (Date.now() + 1).toString(),

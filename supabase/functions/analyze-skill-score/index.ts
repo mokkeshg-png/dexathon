@@ -64,7 +64,7 @@ Student: ${fullName}
 Computed Evidence-Based Skill Score: ${overallScore}/100
 Claimed Skills: ${skills.map((s: any) => s.skills?.name ?? s.name ?? "").filter(Boolean).join(", ")}
 Past Projects: ${pastProjects.map((p: any) => p.title).filter(Boolean).join("; ")}
-Internships: ${internships.map((i: any) => \`\${i.role} at \${i.organization}\`).filter(Boolean).join("; ")}
+Internships: ${internships.map((i: any) => i.role + " at " + i.organization).filter(Boolean).join("; ")}
 Certifications: ${certifications.map((c: any) => c.name).filter(Boolean).join("; ")}
 
 Return ONLY a valid JSON object matching this structure:
@@ -81,7 +81,7 @@ Return ONLY a valid JSON object matching this structure:
     const timeout = setTimeout(() => controller.abort(), 20_000);
     try {
       const response = await fetch(
-        \`https://generativelanguage.googleapis.com/v1beta/models/\${encodeURIComponent(model)}:generateContent\`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
         {
           method: "POST",
           headers: {

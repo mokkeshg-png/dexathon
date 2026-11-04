@@ -10,3 +10,15 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/analyze-skill-score/deno.json"
 entrypoint = "./functions/analyze-skill-score/index.ts"
+
+[functions.ai-navigation]
+enabled = true
+verify_jwt = false
+import_map = "./functions/ai-navigation/deno.json"
+entrypoint = "./functions/ai-navigation/index.ts"
+
+[functions.setup-rls-fixes]
+enabled = false
+verify_jwt = false
+entrypoint = "./functions/setup-rls-fixes/index.ts"
+

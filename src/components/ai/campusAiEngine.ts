@@ -9,11 +9,24 @@ export interface AiConversationContext {
   lastPerson?: Profile;
 }
 
+export interface NavigationAction {
+  type: "navigate";
+  route: string;
+  label: string;
+  entity?: {
+    id: string;
+    name?: string;
+    title?: string;
+    type?: "faculty" | "student" | "project" | "profile";
+  };
+}
+
 export interface ProcessedAiResponse {
   text: string;
   students?: Profile[];
   faculty?: Profile[];
   projects?: Project[];
+  navigation?: NavigationAction;
   contextUpdate: AiConversationContext;
 }
 
@@ -79,6 +92,74 @@ function matchesSkill(skillPool: string[], targetSkill: string): boolean {
   return false;
 }
 
+
+function extractNavigationCommand(rawQuery: string): {
+  isNav: boolean;
+  targetType: "faculty" | "student" | "project" | "profile";
+  isContextual: boolean;
+  targetTerm?: string;
+} | null {
+  const q = rawQuery.trim().replace(/[.!?]+$/, "").toLowerCase();
+
+  // Guard against questions that ask for details rather than navigation
+  if (/^(?:who\s+is|what\s+skills|what\s+does|what\s+are|how\s+to|how\s+do|tell\s+me\s+about|why|where)\b/i.test(q)) {
+    return null;
+  }
+
+  // 1. Contextual project: "open this project" / "navigate to this project" / "open the project"
+  if (/^(?:open|navigate\s+to|go\s+to|view)\s+(?:the\s+|this\s+|selected\s+)?project$/i.test(q)) {
+    return { isNav: true, targetType: "project", isContextual: true };
+  }
+
+  // 2. Named project: "open project <name>"
+  const projNamedMatch = q.match(/^(?:open|navigate\s+to|go\s+to|view)\s+project\s+(.+)$/i);
+  if (projNamedMatch && projNamedMatch[1]) {
+    const raw = projNamedMatch[1].trim();
+    if (raw === "this" || raw === "the" || raw === "selected") {
+      return { isNav: true, targetType: "project", isContextual: true };
+    }
+    return { isNav: true, targetType: "project", isContextual: false, targetTerm: raw };
+  }
+
+  // 3. Contextual faculty: "open this faculty profile" / "open the faculty profile"
+  if (/^(?:open|navigate\s+to|go\s+to|view)\s+(?:the\s+|this\s+)?faculty\s*(?:'s)?\s*(?:profile)?$/i.test(q)) {
+    return { isNav: true, targetType: "faculty", isContextual: true };
+  }
+
+  // 4. Contextual student: "open this student's profile" / "open this student profile"
+  if (/^(?:open|navigate\s+to|go\s+to|view)\s+(?:the\s+|this\s+)?student(?:'s)?\s*(?:profile)?$/i.test(q)) {
+    return { isNav: true, targetType: "student", isContextual: true };
+  }
+
+  // 5. Contextual generic: "navigate to the selected profile" / "open selected profile" / "open this profile"
+  if (/^(?:open|navigate\s+to|go\s+to|view)\s+(?:the\s+)?(?:selected|current|this)\s*profile$/i.test(q) ||
+      /^navigate\s+to\s+(?:the\s+)?selected\s+profile$/i.test(q)) {
+    return { isNav: true, targetType: "profile", isContextual: true };
+  }
+
+  // 6. Named profile: "open <target> profile" / "navigate to <target> profile" / "view <target> profile"
+  const profNamedMatch = q.match(/^(?:open|navigate\s+to|go\s+to|view|take\s+me\s+to)\s+(?:the\s+)?(.+?)\s*(?:'s)?\s+profile$/i);
+  if (profNamedMatch && profNamedMatch[1]) {
+    const raw = profNamedMatch[1].trim();
+    if (raw === "this faculty" || raw === "faculty") return { isNav: true, targetType: "faculty", isContextual: true };
+    if (raw === "this student" || raw === "student") return { isNav: true, targetType: "student", isContextual: true };
+    if (raw === "this" || raw === "the" || raw === "selected" || raw === "the selected") return { isNav: true, targetType: "profile", isContextual: true };
+    return { isNav: true, targetType: "profile", isContextual: false, targetTerm: raw };
+  }
+
+  // 7. Named profile prepositional: "open profile of <target>" / "navigate to profile of <target>"
+  const profOfMatch = q.match(/^(?:open|navigate\s+to|go\s+to|view)\s+(?:the\s+)?profile\s+(?:of|for)\s+(.+)$/i);
+  if (profOfMatch && profOfMatch[1]) {
+    const raw = profOfMatch[1].trim();
+    if (raw === "this faculty" || raw === "faculty") return { isNav: true, targetType: "faculty", isContextual: true };
+    if (raw === "this student" || raw === "student") return { isNav: true, targetType: "student", isContextual: true };
+    if (raw === "this" || raw === "the" || raw === "selected") return { isNav: true, targetType: "profile", isContextual: true };
+    return { isNav: true, targetType: "profile", isContextual: false, targetTerm: raw };
+  }
+
+  return null;
+}
+
 export function processCampusQuery(
   rawQuery: string,
   profiles: Profile[],
@@ -91,6 +172,131 @@ export function processCampusQuery(
 
   const students = profiles.filter((p) => !p.designation && p.role !== "admin");
   const faculty = profiles.filter((p) => !!p.designation || p.role === "faculty");
+
+  // -------------------------------------------------------------------------
+  // 0. Explicit Direct Navigation Intent Recognition (Req 1 & 2)
+  // Commands:
+  // - "Open dex_faculty profile."
+  // - "Open this faculty profile."
+  // - "Open this student's profile."
+  // - "Navigate to the selected profile."
+  // - "Open this project."
+  // -------------------------------------------------------------------------
+  const navCommand = extractNavigationCommand(query);
+  if (navCommand) {
+    if (navCommand.targetType === "project") {
+      let resolvedProj: Project | undefined;
+      if (navCommand.isContextual) {
+        resolvedProj = context.lastProjects?.[0] || projects[0];
+      } else if (navCommand.targetTerm) {
+        const term = navCommand.targetTerm.toLowerCase();
+        resolvedProj = projects.find((p) => p.id.toLowerCase() === term || p.title.toLowerCase().includes(term));
+      }
+
+      if (!resolvedProj) {
+        return {
+          text: "I couldn't find a matching project to open. Please browse projects or check the title.",
+          contextUpdate: context,
+        };
+      }
+
+      return {
+        text: `Opening project "${resolvedProj.title}"...`,
+        navigation: {
+          type: "navigate",
+          route: `/projects/${resolvedProj.id}`,
+          label: "Open Project",
+          entity: {
+            id: resolvedProj.id,
+            title: resolvedProj.title,
+            type: "project",
+          },
+        },
+        contextUpdate: { ...context, lastProjects: [resolvedProj] },
+      };
+    }
+
+    // Profile resolution (Faculty or Student)
+    let resolvedPerson: Profile | undefined;
+
+    if (navCommand.isContextual) {
+      if (navCommand.targetType === "faculty") {
+        resolvedPerson =
+          context.lastFaculty?.[0] ||
+          (context.lastPerson && (context.lastPerson.designation || context.lastPerson.role === "faculty") ? context.lastPerson : undefined) ||
+          faculty[0];
+      } else if (navCommand.targetType === "student") {
+        resolvedPerson =
+          context.lastStudents?.[0] ||
+          (context.lastPerson && (!context.lastPerson.designation && context.lastPerson.role === "student") ? context.lastPerson : undefined) ||
+          students[0];
+      } else {
+        resolvedPerson =
+          context.lastPerson ||
+          context.lastFaculty?.[0] ||
+          context.lastStudents?.[0] ||
+          profiles[0];
+      }
+    } else if (navCommand.targetTerm) {
+      const term = navCommand.targetTerm.toLowerCase().replace(/['"’]/g, "").trim();
+      const termSpaces = term.replace(/_/g, " ");
+
+      resolvedPerson = profiles.find((p) => {
+        const nameLower = p.fullName.toLowerCase();
+        const idLower = p.userId.toLowerCase();
+        const userSlug = nameLower.replace(/\s+/g, "_");
+
+        if (idLower === term) return true;
+        if (nameLower === term || nameLower === termSpaces) return true;
+        if (userSlug === term) return true;
+        if (p.githubUsername && p.githubUsername.toLowerCase() === term) return true;
+        if (nameLower.includes(term) || nameLower.includes(termSpaces)) return true;
+        return false;
+      });
+
+      // Special fallback for role-generic identifiers like "dex_faculty" or "dex_student"
+      if (!resolvedPerson) {
+        if (term.includes("faculty") || term === "dex_faculty") {
+          resolvedPerson = faculty[0] || profiles.find((p) => p.role === "faculty" || !!p.designation);
+        } else if (term.includes("student") || term === "dex_student") {
+          resolvedPerson = students[0] || profiles.find((p) => p.role === "student" && !p.designation);
+        }
+      }
+    }
+
+    if (!resolvedPerson) {
+      return {
+        text: `I couldn't find a profile matching "${navCommand.targetTerm || "the requested person"}" in the campus records. Please check the spelling or search for collaborators.`,
+        contextUpdate: context,
+      };
+    }
+
+    // Check account status
+    if (resolvedPerson.status === "suspended") {
+      return {
+        text: `The profile for "${resolvedPerson.fullName}" is currently suspended or inaccessible.`,
+        contextUpdate: context,
+      };
+    }
+
+    const isFac = Boolean(resolvedPerson.designation || resolvedPerson.role === "faculty");
+    const label = isFac ? "Open Faculty Profile" : "Open Student Profile";
+
+    return {
+      text: `Opening ${resolvedPerson.fullName}'s ${isFac ? "faculty" : "student"} profile...`,
+      navigation: {
+        type: "navigate",
+        route: `/profile/${resolvedPerson.userId}`,
+        label,
+        entity: {
+          id: resolvedPerson.userId,
+          name: resolvedPerson.fullName,
+          type: isFac ? "faculty" : "student",
+        },
+      },
+      contextUpdate: { ...context, lastPerson: resolvedPerson },
+    };
+  }
 
   // -------------------------------------------------------------------------
   // 1. Follow-up handling (e.g. "Only third-year students", "3rd year only", "Computer Science only")

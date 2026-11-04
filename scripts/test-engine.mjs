@@ -2,6 +2,7 @@
 import assert from 'node:assert';
 import { analyzeStudentSkillScore } from '../src/lib/skillScoreEngine.ts';
 import { PROJECT_TYPES } from '../src/types/index.ts';
+import { processCampusQuery } from '../src/components/ai/campusAiEngine.ts';
 import { computeCompleteness } from '../src/lib/completeness.ts';
 import { analyzeCompatibility, analyzeSkillGap, projectMatchBreakdown } from '../src/lib/matching.ts';
 import {
@@ -32,6 +33,7 @@ import {
   createProject,
   updateProject,
   reviewMentorship,
+  invokeAiNavigation,
 } from '../src/lib/supabase-db.ts';
 
 console.log("=================================================");
@@ -1454,6 +1456,133 @@ it("12. Student Project Detail Hub hides 'Offer Faculty Mentorship' and Project 
   assert(!studentPermittedTypes.includes("Faculty Academic Project"), "Must exclude Faculty Academic Project");
   assert(!studentPermittedTypes.includes("College Innovation Project"), "Must exclude College Innovation Project");
   assert(!studentPermittedTypes.includes("Industry Challenge"), "Must exclude Industry Challenge");
+});
+
+
+// ---------------------------------------------------------------------------
+// SECTION 15: AI DIRECT PROFILE NAVIGATION (6 CRITERIA)
+// ---------------------------------------------------------------------------
+console.log("\n--- SECTION 15: AI DIRECT PROFILE NAVIGATION ---");
+
+const testFacultyProfile = {
+  id: "fac-uuid-1010-2020",
+  userId: "fac-uuid-1010-2020",
+  fullName: "Prof. Vikram Sarabhai",
+  email: "vikram@iitd.ac.in",
+  role: "faculty",
+  designation: "Professor & Chair",
+  department: "Aerospace Engineering",
+  institution: "IIT Delhi",
+  skills: [{ skill: "Spacecraft Dynamics", proficiency: "expert" }],
+  status: "active",
+};
+
+const testStudentProfile = {
+  id: "stu-uuid-3030-4040",
+  userId: "stu-uuid-3030-4040",
+  fullName: "Aarav Sharma",
+  email: "aarav@iitd.ac.in",
+  role: "student",
+  academicYear: 3,
+  department: "Computer Science & Engineering",
+  institution: "IIT Delhi",
+  skills: [{ skill: "Python", proficiency: "advanced" }, { skill: "AI", proficiency: "intermediate" }],
+  status: "active",
+};
+
+const testSuspendedProfile = {
+  id: "susp-uuid-9999-0000",
+  userId: "susp-uuid-9999-0000",
+  fullName: "Malicious Actor",
+  role: "student",
+  status: "suspended",
+  skills: [],
+};
+
+const testProfilesList = [testFacultyProfile, testStudentProfile, testSuspendedProfile];
+const testProjectsList = [
+  {
+    id: "proj-uuid-5555-6666",
+    title: "Autonomous Navigation Pod",
+    status: "open",
+    visibility: "public",
+    requiredSkills: ["Python", "ROS"],
+    domains: ["Robotics"],
+    roles: [],
+  },
+];
+
+it("1. Faculty direct navigation: resolves 'Open dex_faculty profile.' to validated /profile/:id", () => {
+  // Scenario 1a: Named profile command "Open dex_faculty profile."
+  const res1 = processCampusQuery("Open dex_faculty profile.", testProfilesList, testProjectsList, null, {});
+  assert(res1.navigation, "Must return navigation action");
+  assert.strictEqual(res1.navigation.type, "navigate");
+  assert.strictEqual(res1.navigation.route, `/profile/${testFacultyProfile.userId}`);
+  assert.strictEqual(res1.navigation.label, "Open Faculty Profile");
+  assert.strictEqual(res1.students, undefined, "Must NOT show student cards on direct navigation");
+  assert.strictEqual(res1.faculty, undefined, "Must NOT show faculty cards on direct navigation");
+
+  // Scenario 1b: Contextual command "Open this faculty profile."
+  const res2 = processCampusQuery("Open this faculty profile.", testProfilesList, testProjectsList, null, {
+    lastFaculty: [testFacultyProfile],
+  });
+  assert(res2.navigation, "Must return navigation action from context");
+  assert.strictEqual(res2.navigation.route, `/profile/${testFacultyProfile.userId}`);
+  assert.strictEqual(res2.navigation.label, "Open Faculty Profile");
+});
+
+it("2. Student direct navigation: resolves 'Open this student\'s profile.' and 'Navigate to the selected profile.'", () => {
+  // Scenario 2a: Contextual command "Open this student's profile."
+  const res1 = processCampusQuery("Open this student's profile.", testProfilesList, testProjectsList, null, {
+    lastStudents: [testStudentProfile],
+  });
+  assert(res1.navigation, "Must return navigation action from context");
+  assert.strictEqual(res1.navigation.type, "navigate");
+  assert.strictEqual(res1.navigation.route, `/profile/${testStudentProfile.userId}`);
+  assert.strictEqual(res1.navigation.label, "Open Student Profile");
+
+  // Scenario 2b: Contextual generic command "Navigate to the selected profile."
+  const res2 = processCampusQuery("Navigate to the selected profile.", testProfilesList, testProjectsList, null, {
+    lastPerson: testStudentProfile,
+  });
+  assert(res2.navigation, "Must return navigation action from lastPerson context");
+  assert.strictEqual(res2.navigation.route, `/profile/${testStudentProfile.userId}`);
+
+  // Scenario 2c: Contextual project command "Open this project."
+  const res3 = processCampusQuery("Open this project.", testProfilesList, testProjectsList, null, {
+    lastProjects: [testProjectsList[0]],
+  });
+  assert(res3.navigation, "Must return project navigation action");
+  assert.strictEqual(res3.navigation.route, `/projects/${testProjectsList[0].id}`);
+  assert.strictEqual(res3.navigation.label, "Open Project");
+});
+
+it("3. Invalid profile ID or unknown person does not trigger navigation", () => {
+  const res = processCampusQuery("Open NonExistentGhostUser profile.", testProfilesList, testProjectsList, null, {});
+  assert.strictEqual(res.navigation, undefined, "Must not return navigation action for unknown profile");
+  assert(res.text.includes("couldn't find a profile") || res.text.includes("NonExistentGhostUser"), "Must indicate profile not found");
+});
+
+it("4. Unauthorized / suspended profile is strictly blocked from navigation", () => {
+  const res = processCampusQuery("Open Malicious Actor profile.", testProfilesList, testProjectsList, null, {});
+  assert.strictEqual(res.navigation, undefined, "Must not return navigation action for suspended profile");
+  assert(res.text.includes("suspended") || res.text.includes("inaccessible"), "Must indicate profile is suspended or inaccessible");
+});
+
+it("5. Normal profile search preserves profile cards and does NOT trigger direct navigation", () => {
+  const res = processCampusQuery("Find students who know Python and AI", testProfilesList, testProjectsList, null, {});
+  assert.strictEqual(res.navigation, undefined, "Normal profile search must not attach navigation action");
+  assert(Array.isArray(res.students), "Normal search must return students array for card rendering");
+  assert(res.students.length > 0, "Must return matching student");
+  assert.strictEqual(res.students[0].userId, testStudentProfile.userId);
+});
+
+it("6. Normal profile details request preserves markdown breakdown and does NOT trigger direct navigation", () => {
+  const res = processCampusQuery("Who is Aarav Sharma?", testProfilesList, testProjectsList, null, {});
+  assert.strictEqual(res.navigation, undefined, "Normal profile details query must not attach navigation action");
+  assert(res.text.includes("Aarav Sharma"), "Must return profile name");
+  assert(res.text.includes("Department"), "Must return department breakdown");
+  assert(res.text.includes("Skills"), "Must return skills details");
 });
 
 // Summary

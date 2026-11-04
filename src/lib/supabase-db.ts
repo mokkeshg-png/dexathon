@@ -2977,6 +2977,92 @@ export async function fetchSkillScoreHistory(
  *
  * Returns the saved SkillScoreRecord, or null on failure.
  */
+
+export interface NavigationAction {
+  type: "navigate";
+  route: string;
+  label: string;
+  entity?: {
+    id: string;
+    name?: string;
+    title?: string;
+    type?: string;
+  };
+}
+
+/**
+ * invokeAiNavigation
+ *
+ * Calls the ai-navigation Supabase Edge Function to securely resolve a
+ * requested entity to its verified UUID under RLS and return a validated route.
+ * Falls back to deterministic verification if the Edge Function is unavailable.
+ */
+export async function invokeAiNavigation(params: {
+  target?: string;
+  id?: string;
+  entityType?: "faculty" | "student" | "project" | "profile";
+}): Promise<NavigationAction | null> {
+  // 1. Attempt to invoke the Supabase Edge Function
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.functions.invoke("ai-navigation", {
+        body: {
+          target: params.target,
+          id: params.id,
+          entity_type: params.entityType,
+        },
+      });
+
+      if (!error && data && data.type === "navigate" && typeof data.route === "string") {
+        if (/^\/(profile|projects)\/[a-zA-Z0-9_-]+(\?.*)?$/.test(data.route)) {
+          return {
+            type: "navigate",
+            route: data.route,
+            label: data.label || "Open Profile",
+            entity: data.entity,
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("ai-navigation Edge Function invocation error:", err);
+    }
+  }
+
+  // 2. Deterministic local validation fallback
+  if (params.id) {
+    const prof = await fetchProfile(params.id);
+    if (prof && prof.status !== "suspended") {
+      const isFaculty = Boolean(prof.designation || prof.role === "faculty");
+      return {
+        type: "navigate",
+        route: `/profile/${prof.userId}`,
+        label: isFaculty ? "Open Faculty Profile" : "Open Student Profile",
+        entity: {
+          id: prof.userId,
+          name: prof.fullName,
+          type: isFaculty ? "faculty" : "student",
+        },
+      };
+    }
+
+    const proj = await fetchProjectById(params.id);
+    if (proj && proj.status !== "closed") {
+      return {
+        type: "navigate",
+        route: `/projects/${proj.id}`,
+        label: "Open Project",
+        entity: {
+          id: proj.id,
+          title: proj.title,
+          type: "project",
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
 export async function invokeSkillScoreAnalysis(
   githubPublicRepos?: number
 ): Promise<SkillScoreRecord | null> {
