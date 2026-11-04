@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams, Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -8,7 +8,6 @@ import {
   fetchReports,
   fetchAuditLogs,
   suspendUser,
-  adminDeleteUser,
   moderateProject,
   resolveReport,
 } from "@/lib/supabase-db";
@@ -20,15 +19,18 @@ import {
   recordPaymentTransaction,
   fetchCollegeMembers,
   addCollegeMember,
+  removeCollegeMember,
   fetchCollegeInvitations,
   createCollegeInvitation,
   revokeCollegeInvitation,
 } from "@/services/saasService";
+import { CollegeAdminAccessGuidelinesModal } from "@/components/admin/CollegeAdminAccessGuidelinesModal";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/Button";
 import { Card, Badge, Progress } from "@/components/ui/Card";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
+import { AdminDashboardSkeleton } from "@/components/ui/Skeleton";
 import type {
   Profile,
   Project,
@@ -68,6 +70,15 @@ type AdminTab =
 
 export function Admin() {
   const { user, profile: authProfile, isOwner, isAdmin, isCollegeAdmin } = useAuth();
+  if (authProfile?.role === "industry_partner") {
+    return <Navigate to="/industry" replace />;
+  }
+  if (authProfile?.role === "faculty") {
+    return <Navigate to="/faculty" replace />;
+  }
+  if (authProfile?.role === "student") {
+    return <Navigate to="/dashboard" replace />;
+  }
   const toast = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -125,6 +136,7 @@ export function Admin() {
   const [newMemberEmail, setNewMemberEmail] = useState("");
   const [newMemberDepartment, setNewMemberDepartment] = useState("Computer Science & Engineering");
   const [submittingMember, setSubmittingMember] = useState(false);
+  const [guidelinesOpen, setGuidelinesOpen] = useState(false);
 
   // College Profile Edit
   const [collegeDetails, setCollegeDetails] = useState({
@@ -406,12 +418,17 @@ export function Admin() {
     }
   };
 
-  const handleDeleteUser = async (targetUserId: string) => {
-    if (confirm("Permanently delete this user and their profile data?")) {
-      await adminDeleteUser(user.id, targetUserId);
+  const handleRemoveCollegeMember = async (targetUserId: string) => {
+    if (!user) return;
+    if (confirm("Remove this member from the institutional workspace? Their personal account, profile, and historical work will be safely preserved.")) {
+      const targetCollege = currentCollege?.id || colleges[0]?.id || "col-1";
+      await removeCollegeMember(targetCollege, targetUserId, user.id);
+      toast.success("Member removed", "College workspace membership revoked; personal account preserved.");
       await loadData();
     }
   };
+
+
 
   const handleModerateProject = async (projId: string, status: "flagged" | "removed" | "open") => {
     await moderateProject(user.id, projId, status);
@@ -456,14 +473,7 @@ export function Admin() {
   const pendingReportsCount = reports.filter((r) => r.status === "pending").length;
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center">
-        <div className="flex items-center gap-3 text-sm text-[#7B828A] font-medium">
-          <div className="w-5 h-5 border-2 border-[#181B1F] border-t-transparent rounded-full animate-spin" />
-          Loading institutional data...
-        </div>
-      </div>
-    );
+    return <AdminDashboardSkeleton />;
   }
 
   const tabs = [
@@ -481,13 +491,21 @@ export function Admin() {
       {/* Institution Dashboard Header */}
       <div className="rounded-3xl border border-[#ECE5D8] bg-white p-6 sm:p-8 shadow-card flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5 rounded-xl bg-[#FFF4D0] px-3 py-1 text-xs font-bold uppercase tracking-wider text-[#8C6000] border border-[#FFE785]">
               <Shield className="h-3.5 w-3.5 text-[#8C6000]" /> College Administration Console
             </span>
             <span className="text-xs text-[#8C8372] font-semibold bg-[#FAF7EE] rounded-full px-2.5 py-0.5 border border-[#ECE5D8]">
               {currentCollege?.name || authProfile?.institution || "Campus Node"}
             </span>
+            <button
+              type="button"
+              onClick={() => setGuidelinesOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border border-[#FFD040] bg-[#FFFBEA] text-[#7A4D00] hover:bg-[#FFF4D0] transition-colors cursor-pointer shadow-xs"
+            >
+              <Shield className="h-3.5 w-3.5 text-[#BD7D14]" />
+              <span>College Admin Governance & Rules (A–Z)</span>
+            </button>
           </div>
           <h1 className="mt-2 font-serif text-3xl sm:text-4xl font-extrabold tracking-tight text-[#181B1F]">
             Institution Dashboard
@@ -1021,7 +1039,7 @@ export function Admin() {
                       <Button size="sm" variant="ghost" onClick={() => handleSuspendUser(p.userId)} className="text-amber-700 hover:bg-amber-50 text-xs">
                         Suspend
                       </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleDeleteUser(p.userId)} className="text-red-700 hover:bg-red-50 text-xs">
+                      <Button size="sm" variant="ghost" onClick={() => handleRemoveCollegeMember(p.userId)} className="text-red-700 hover:bg-red-50 text-xs" title="Revoke college membership while preserving personal account">
                         Remove
                       </Button>
                     </td>
@@ -1442,6 +1460,12 @@ export function Admin() {
           </div>
         </form>
       </Modal>
+
+      {/* ── MODAL: COLLEGE ADMIN ACCESS GUIDELINES & GOVERNANCE ── */}
+      <CollegeAdminAccessGuidelinesModal
+        open={guidelinesOpen}
+        onClose={() => setGuidelinesOpen(false)}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Card, Badge } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -7,12 +7,15 @@ import { Field, Input, Select } from "@/components/ui/Field";
 import {
   fetchIndustryChallenges,
   createIndustryChallenge,
+  updateIndustryChallenge,
+  closeIndustryChallenge,
   fetchChallengeApplications,
   submitChallengeApplication,
   updateChallengeApplicationStatus,
   fetchColleges,
 } from "@/services/saasService";
 import { fetchAllProfiles } from "@/lib/supabase-db";
+import { IndustryAccessGuidelinesModal } from "@/components/industry/IndustryAccessGuidelinesModal";
 import type { IndustryChallenge, ChallengeApplication, Profile, College } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
@@ -30,6 +33,8 @@ import {
   Building2,
   GraduationCap,
   Check,
+  Edit3,
+  Lock,
 } from "lucide-react";
 
 export function IndustryBridge() {
@@ -80,6 +85,85 @@ export function IndustryBridge() {
   const [orgDomain, setOrgDomain] = useState(profile?.department || "CleanTech & AI");
   const [orgWebsite, setOrgWebsite] = useState("https://partner.enterprise.com");
   const [orgContact, setOrgContact] = useState(user?.email || "rnd@enterprise.com");
+
+  // Governance Guidelines Modal
+  const [guidelinesOpen, setGuidelinesOpen] = useState(false);
+
+  // Edit Challenge State
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingChallenge, setEditingChallenge] = useState<IndustryChallenge | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editStatement, setEditStatement] = useState("");
+  const [editBounty, setEditBounty] = useState("");
+  const [editDeadline, setEditDeadline] = useState("");
+  const [editDomain, setEditDomain] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const myChallengeIds = useMemo(() => {
+    if (!isIndustry || !user) return new Set<string>();
+    return new Set(
+      challenges
+        .filter(
+          (c) =>
+            c.partnerId === user.id ||
+            c.partner?.id === user.id ||
+            c.partner?.contactEmail === user.email
+        )
+        .map((c) => c.id)
+    );
+  }, [challenges, isIndustry, user]);
+
+  const visibleApplications = useMemo(() => {
+    if (!isIndustry) return applications;
+    return applications.filter((a) => myChallengeIds.has(a.challengeId));
+  }, [applications, isIndustry, myChallengeIds]);
+
+  const openEditModal = (chal: IndustryChallenge) => {
+    setEditingChallenge(chal);
+    setEditTitle(chal.title);
+    setEditStatement(chal.problemStatement);
+    setEditBounty(chal.bountyOrGrant || "");
+    setEditDeadline(chal.deadline || "");
+    setEditDomain(chal.domain || "Artificial Intelligence & Machine Learning");
+    setEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingChallenge || !user) return;
+    setSavingEdit(true);
+    try {
+      const updated = await updateIndustryChallenge(user.id, editingChallenge.id, {
+        title: editTitle.trim(),
+        problemStatement: editStatement.trim(),
+        bountyOrGrant: editBounty.trim(),
+        deadline: editDeadline,
+        domain: editDomain,
+      });
+      setChallenges((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      toast.success("Challenge Updated", `Changes to "${updated.title}" have been saved.`);
+      setEditModalOpen(false);
+      setEditingChallenge(null);
+    } catch (err: any) {
+      toast.error("Edit Failed", err?.message || "Failed to update challenge");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleToggleCloseChallenge = async (chal: IndustryChallenge) => {
+    if (!user) return;
+    try {
+      const updated =
+        chal.status === "closed"
+          ? await updateIndustryChallenge(user.id, chal.id, { status: "open" })
+          : await closeIndustryChallenge(user.id, chal.id);
+      setChallenges((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+      toast.success("Status Updated", `Challenge is now ${updated.status?.toUpperCase()}.`);
+    } catch (err: any) {
+      toast.error("Status Update Failed", err?.message);
+    }
+  };
 
   useEffect(() => {
     async function load() {
@@ -220,7 +304,7 @@ export function IndustryBridge() {
           ? `[OFFICIAL INTERNSHIP & CO-DEV OFFER] ${feedbackText}`
           : feedbackText;
 
-      await updateChallengeApplicationStatus(selectedApp.id, finalStatus, finalFeedback);
+      await updateChallengeApplicationStatus(selectedApp.id, finalStatus, finalFeedback, "industry_partner", user?.id);
 
       setApplications((prev) =>
         prev.map((a) =>
@@ -250,9 +334,21 @@ export function IndustryBridge() {
       <div className="clay-card p-6 sm:p-8 bg-gradient-to-br from-white via-[#FFFDF8] to-[#FFF9E6] border border-[#ECE5D8]">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="space-y-2 max-w-3xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFF4D0] border border-[#FFE785] text-[11px] font-bold uppercase tracking-wider text-[#8C6000]">
-              <Sparkles className="h-3.5 w-3.5" />
-              {isIndustry ? "Industry Partner Innovation Dashboard" : "Industry-to-Campus Innovation Bridge"}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFF4D0] border border-[#FFE785] text-[11px] font-bold uppercase tracking-wider text-[#8C6000]">
+                <Sparkles className="h-3.5 w-3.5" />
+                {isIndustry ? "Industry Partner Innovation Dashboard" : "Industry-to-Campus Innovation Bridge"}
+              </div>
+              {isIndustry && (
+                <button
+                  type="button"
+                  onClick={() => setGuidelinesOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border border-[#FFD040] bg-[#FFFBEA] text-[#7A4D00] hover:bg-[#FFF4D0] transition-colors cursor-pointer shadow-xs"
+                >
+                  <Briefcase className="h-3.5 w-3.5 text-[#BD7D14]" />
+                  <span>Industry Governance & Rules (A–Z)</span>
+                </button>
+              )}
             </div>
             <h1 className="font-serif text-2xl sm:text-4xl font-extrabold text-[#181B1F] tracking-tight">
               {isIndustry
@@ -355,7 +451,19 @@ export function IndustryBridge() {
           </div>
 
           {loading ? (
-            <div className="text-center py-16 text-xs text-[#7B828A]">Loading innovation challenges...</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="clay-card-cream p-6 rounded-2xl border border-[#ECE5D8] space-y-4">
+                  <div className="flex justify-between items-center">
+                    <div className="h-5 w-24 bg-[#EBE5D8] rounded-full" />
+                    <div className="h-4 w-16 bg-[#EBE5D8] rounded" />
+                  </div>
+                  <div className="h-6 w-3/4 bg-[#EBE5D8] rounded" />
+                  <div className="h-14 w-full bg-[#EBE5D8] rounded" />
+                  <div className="h-9 w-full bg-[#EBE5D8] rounded-xl" />
+                </div>
+              ))}
+            </div>
           ) : filteredChallenges.length === 0 ? (
             <Card className="text-center py-16 bg-white border-[#ECE5D8] rounded-2xl">
               <Briefcase className="h-10 w-10 text-[#7B828A] mx-auto mb-2 opacity-50" />
@@ -441,9 +549,35 @@ export function IndustryBridge() {
                     </span>
 
                     {isIndustry ? (
-                      <span className="clay-badge clay-badge-gold text-[10px] font-bold">
-                        Published by you
-                      </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {item.partnerId === user?.id || item.partner?.id === user?.id || item.partner?.contactEmail === user?.email ? (
+                          <>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${item.status === 'closed' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                              {item.status === 'closed' ? 'Closed' : 'Active'}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openEditModal(item)}
+                              className="text-xs py-0.5 px-2 h-7"
+                            >
+                              <Edit3 className="h-3 w-3 mr-1" /> Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleToggleCloseChallenge(item)}
+                              className="text-xs py-0.5 px-2 h-7 text-[#7B828A]"
+                            >
+                              {item.status === "closed" ? "Reopen" : "Close"}
+                            </Button>
+                          </>
+                        ) : (
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#FAF7EE] text-[#7B828A] border border-[#ECE5D8]">
+                            Corporate Partner Challenge
+                          </span>
+                        )}
+                      </div>
                     ) : (
                       <Button
                         onClick={() => setActiveChallenge(item)}
@@ -467,24 +601,24 @@ export function IndustryBridge() {
         <div className="space-y-4">
           <div>
             <h2 className="font-serif text-xl sm:text-2xl font-bold text-[#181B1F]">
-              Student & Faculty Team Proposals ({applications.length})
+              Student & Faculty Team Proposals ({visibleApplications.length})
             </h2>
             <p className="text-xs text-[#5E646A]">
               Review solution architectures submitted for your corporate challenges, provide technical feedback, and offer internship sponsorships
             </p>
           </div>
 
-          {applications.length === 0 ? (
+          {visibleApplications.length === 0 ? (
             <Card className="text-center py-16 bg-white border-[#ECE5D8] rounded-2xl">
               <Users className="h-10 w-10 text-[#7B828A] mx-auto mb-2 opacity-50" />
               <h3 className="font-serif text-base font-bold text-[#181B1F]">No Proposals Received Yet</h3>
               <p className="text-xs text-[#7B828A] mt-1 max-w-sm mx-auto">
-                Student teams are preparing their research pitches. They will appear here once submitted.
+                Student teams are preparing their research pitches. They will appear here once submitted to your organization's challenges.
               </p>
             </Card>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {applications.map((app) => {
+              {visibleApplications.map((app) => {
                 const chal = challenges.find((c) => c.id === app.challengeId);
                 return (
                   <Card key={app.id} className="clay-card p-6 bg-white border-[#ECE5D8] rounded-2xl flex flex-col justify-between space-y-4">
@@ -589,6 +723,12 @@ export function IndustryBridge() {
               />
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#7B828A]" />
             </div>
+          </div>
+
+          {/* Student Privacy Protection Banner */}
+          <div className="flex items-center gap-2 p-3 rounded-xl bg-[#FFFDF8] border border-[#FFE785] text-xs text-[#8C6000]">
+            <Lock className="h-4 w-4 shrink-0" />
+            <span>Student personal phone numbers and direct email addresses are shielded under institutional privacy controls. Engage candidate pods through verified challenge invitations.</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -923,6 +1063,68 @@ export function IndustryBridge() {
           </form>
         )}
       </Modal>
+
+      {/* ── MODAL: EDIT INDUSTRY CHALLENGE ── */}
+      <Modal
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title="Edit Organization Challenge"
+      >
+        {editingChallenge && (
+          <form onSubmit={handleSaveEdit} className="space-y-4">
+            <Field label="Challenge Title">
+              <Input
+                required
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="e.g. Edge AI Inference Telemetry"
+              />
+            </Field>
+
+            <Field label="Problem Statement & Technical Scope">
+              <textarea
+                required
+                rows={4}
+                className="w-full rounded-xl border border-[#ECE5D8] bg-[#FAF7EE] p-3 text-xs text-[#181B1F] focus:border-[#FFC812] focus:outline-none"
+                value={editStatement}
+                onChange={(e) => setEditStatement(e.target.value)}
+              />
+            </Field>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Field label="Research Grant / Bounty">
+                <Input
+                  value={editBounty}
+                  onChange={(e) => setEditBounty(e.target.value)}
+                  placeholder="e.g. ₹2,50,000 Grant"
+                />
+              </Field>
+              <Field label="Deadline">
+                <Input
+                  type="date"
+                  value={editDeadline ? editDeadline.split("T")[0] : ""}
+                  onChange={(e) => setEditDeadline(e.target.value)}
+                />
+              </Field>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-3 border-t border-[#ECE5D8]">
+              <Button type="button" variant="outline" size="sm" onClick={() => setEditModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" size="sm" loading={savingEdit} className="shadow-clay">
+                Save Challenge Changes
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* ── MODAL: INDUSTRY ACCESS GUIDELINES & GOVERNANCE ── */}
+      <IndustryAccessGuidelinesModal
+        open={guidelinesOpen}
+        onClose={() => setGuidelinesOpen(false)}
+      />
     </div>
   );
 }

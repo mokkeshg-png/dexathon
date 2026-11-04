@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { Navigate } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { fetchCurriculumReports } from "@/services/saasService";
@@ -15,6 +17,13 @@ import {
 } from "lucide-react";
 
 export function CurriculumEvolution() {
+  const { profile } = useAuth();
+  if (profile?.role === "industry_partner") {
+    return <Navigate to="/industry" replace />;
+  }
+  if (profile?.role === "student") {
+    return <Navigate to="/dashboard" replace />;
+  }
   const toast = useToast();
   const [reports, setReports] = useState<CurriculumGapReport[]>([]);
   const [loading, setLoading] = useState(true);

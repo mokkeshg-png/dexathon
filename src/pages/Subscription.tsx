@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -31,7 +31,16 @@ import {
 const BILLING_CYCLE_DISCOUNT = 17; // ~17% discount for annual billing
 
 export function Subscription() {
-  const { user, isAdmin, isCollegeAdmin, collegeId } = useAuth();
+  const { user, profile, isAdmin, isCollegeAdmin, collegeId } = useAuth();
+  if (profile?.role === "industry_partner") {
+    return <Navigate to="/industry" replace />;
+  }
+  if (profile?.role === "faculty") {
+    return <Navigate to="/faculty" replace />;
+  }
+  if (profile?.role === "student") {
+    return <Navigate to="/dashboard" replace />;
+  }
   const toast = useToast();
 
   const [plans, setPlans] = useState<SubscriptionPlan[]>([]);

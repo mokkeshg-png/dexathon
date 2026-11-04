@@ -24,6 +24,7 @@ import { IndustryBridge } from "./pages/IndustryBridge";
 import { CurriculumEvolution } from "./pages/CurriculumEvolution";
 import { KnowledgeRecovery } from "./pages/KnowledgeRecovery";
 import { Subscription } from "./pages/Subscription";
+import { StudentGuidelines } from "./pages/StudentGuidelines";
 import { AiAssistant } from "./components/ai/AiAssistant";
 import { Button } from "./components/ui/Button";
 import { Link } from "react-router-dom";
@@ -78,6 +79,7 @@ export default function App() {
               <Route path="/collaborators" element={<Collaborators />} />
               <Route path="/search" element={<Search />} />
               <Route path="/profile/:id" element={<Profile />} />
+              <Route path="/student-guidelines" element={<StudentGuidelines />} />
 
               {/* Authenticated Workspace Routes */}
               <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
@@ -90,7 +92,7 @@ export default function App() {
               <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-              <Route path="/industry" element={<ProtectedRoute><IndustryBridge /></ProtectedRoute>} />
+              <Route path="/industry" element={<ProtectedRoute allowedRoles={["student", "faculty", "industry_partner", "admin", "college_admin", "owner"]}><IndustryBridge /></ProtectedRoute>} />
               <Route path="/curriculum" element={<ProtectedRoute allowedRoles={["faculty", "college_admin", "admin"]}><CurriculumEvolution /></ProtectedRoute>} />
               <Route path="/recovery" element={<ProtectedRoute allowedRoles={["student", "faculty", "admin", "college_admin"]}><KnowledgeRecovery /></ProtectedRoute>} />
 

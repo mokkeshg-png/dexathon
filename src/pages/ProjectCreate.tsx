@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { useNavigate, Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -49,10 +49,25 @@ import {
 
 export function ProjectCreate() {
   const { user, profile } = useAuth();
+  if (profile?.role === "industry_partner") {
+    return <Navigate to="/industry" replace />;
+  }
+  if (profile?.role === "college_admin" || profile?.role === "admin") {
+    return <Navigate to="/admin" replace />;
+  }
   const navigate = useNavigate();
   const toast = useToast();
 
   const isFaculty = profile?.role === "faculty";
+
+  const availableProjectTypes = useMemo(() => {
+    if (profile?.role === "student") {
+      return PROJECT_TYPES.filter(
+        (pt) => !["Faculty Academic Project", "College Innovation Project", "Industry Challenge", "Joint Industry Project", "Faculty-Led Research"].includes(pt)
+      );
+    }
+    return PROJECT_TYPES;
+  }, [profile?.role]);
 
   // Wizard Step State
   const [currentStep, setCurrentStep] = useState(1);
@@ -469,7 +484,7 @@ export function ProjectCreate() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Project Classification" required>
               <Select value={type} onChange={(e) => setType(e.target.value as ProjectType)}>
-                {PROJECT_TYPES.map((pt) => (
+                {availableProjectTypes.map((pt) => (
                   <option key={pt} value={pt}>
                     {pt}
                   </option>

@@ -1,29 +1,26 @@
 import { createClient } from "@supabase/supabase-js";
 
-const envUrl = ((typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_URL) || (typeof globalThis !== "undefined" && (globalThis as any).process?.env?.VITE_SUPABASE_URL)) as string | undefined;
-const envKey = ((typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_ANON_KEY) || (typeof globalThis !== "undefined" && (globalThis as any).process?.env?.VITE_SUPABASE_ANON_KEY)) as string | undefined;
+const envUrl = (
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_URL) ||
+  ((globalThis as any)?.process?.env?.VITE_SUPABASE_URL) ||
+  "https://mzmhfiaiaflsxkdpfdzl.supabase.co"
+) as string;
+
+const envKey = (
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_SUPABASE_ANON_KEY) ||
+  ((globalThis as any)?.process?.env?.VITE_SUPABASE_ANON_KEY) ||
+  "sb_publishable_CCcsMk8dYy23TuOHjl6i-g_zsEcertW"
+) as string;
 
 export const isSupabaseConfigured = Boolean(
   envUrl && envKey && !envUrl.includes("placeholder")
 );
 
-// Use configured credentials, or safe fallback credentials for offline UI exploration
-const supabaseUrl =
-  envUrl || "https://placeholder-synaptra.supabase.co";
-const supabaseAnonKey =
-  envKey ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBsYWNlaG9sZGVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE2MDAwMDAwMDAsImV4cCI6MTkwMDAwMDAwMH0.placeholder";
-
-if (!isSupabaseConfigured && typeof import.meta !== "undefined" && import.meta.env?.DEV) {
-  console.info(
-    "ℹ️ [SYNAPTRA] Supabase environment variables not set or pointing to placeholder. " +
-    "Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env to connect to your live database."
-  );
-}
+const supabaseUrl = envUrl;
+const supabaseAnonKey = envKey;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export function supabaseConfigured() {
   return isSupabaseConfigured;
 }
-

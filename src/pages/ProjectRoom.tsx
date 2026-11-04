@@ -152,6 +152,7 @@ export function ProjectRoom() {
   const [feedbackModalOpen, setFeedbackModalOpen] = useState(false);
   const [selectedSubForFeedback, setSelectedSubForFeedback] = useState<WeeklySubmission | null>(null);
   const [feedbackText, setFeedbackText] = useState("");
+  const [reviewDecision, setReviewDecision] = useState<"accepted" | "changes_requested" | "reviewed">("reviewed");
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
 
   const [dataLoading, setDataLoading] = useState(true);
@@ -205,7 +206,7 @@ export function ProjectRoom() {
       }
 
       // Check access
-      const access = canAccessRoomSync(user.id, id, mems, proj.ownerId) || authProfile?.role === "admin" || authProfile?.role === "owner";
+      const access = canAccessRoomSync(user.id, id, mems, proj.ownerId);
       setHasAccess(access);
       if (!access) {
         setDataLoading(false);
@@ -475,6 +476,12 @@ export function ProjectRoom() {
   const handleStatusChange = async (taskId: string, newStatus: TaskStatus) => {
     const existing = projectTasks.find((t: any) => t.id === taskId);
     if (!existing) return;
+    const isAssignee = existing.assignedTo === user.id;
+    const isCreator = existing.createdBy === user.id;
+    if (authProfile?.role === "student" && !isOwner && !isAssignee && !isCreator && existing.assignedTo) {
+      toast.error("Permission Denied", "Students can only update their own assigned tasks.");
+      return;
+    }
     await saveTask(user.id, project.id, { ...existing, status: newStatus }, existing.id);
     await refresh();
     toast.success("Task status updated", `Moved to ${newStatus.replace("_", " ")}.`);
@@ -694,7 +701,7 @@ export function ProjectRoom() {
     if (!selectedSubForFeedback || !feedbackText.trim() || !id || !user) return;
     setSubmittingFeedback(true);
     try {
-      await reviewWeeklySubmission(selectedSubForFeedback.id, id, user.id, feedbackText.trim());
+      await reviewWeeklySubmission(selectedSubForFeedback.id, id, user.id, feedbackText.trim(), reviewDecision);
       setWeeklySubmissions((prev) =>
         prev.map((s) =>
           s.id === selectedSubForFeedback.id
@@ -1359,13 +1366,14 @@ export function ProjectRoom() {
               </div>
 
               {/* 4 Kanban Columns per PRD Section 31.2 */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
                 {(
                   [
                     { id: "todo", title: "To Do" },
                     { id: "in_progress", title: "In Progress" },
-                    { id: "review", title: "Review" },
+                    { id: "review", title: "Under Review" },
                     { id: "completed", title: "Completed" },
+                    { id: "blocked", title: "Blocked" },
                   ] as const
                 ).map((col) => {
                   const tasksInCol = projectTasks.filter((t) => t.status === col.id);
@@ -1409,8 +1417,9 @@ export function ProjectRoom() {
                                 >
                                   <option value="todo">To Do</option>
                                   <option value="in_progress">In Prog</option>
-                                  <option value="review">Review</option>
+                                  <option value="review">Under Review</option>
                                   <option value="completed">Done</option>
+                                  <option value="blocked">Blocked</option>
                                 </select>
                               </div>
 
@@ -1536,7 +1545,8 @@ export function ProjectRoom() {
                 <div className="space-y-4">
                   {weeklySubmissions.map((sub) => {
                     const isMySub = sub.studentId === user.id;
-                    const canReview = isOwner || authProfile?.role === "faculty" || members.some((m: any) => m.userId === user.id && (m.systemRole === "mentor" || m.systemRole === "lead"));
+                    const isStudent = authProfile?.role === "student";
+                    const canReview = !isStudent && (isOwner || members.some((m: any) => m.userId === user.id && m.systemRole === "mentor"));
 
                     return (
                       <div key={sub.id} className="clay-card p-5 space-y-4">
@@ -1631,9 +1641,22 @@ export function ProjectRoom() {
                         {sub.facultyFeedback ? (
                           <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs space-y-1.5">
                             <div className="flex items-center justify-between">
-                              <span className="font-bold text-emerald-950 flex items-center gap-1.5">
-                                <CheckCircle2 className="h-4 w-4 text-emerald-700" /> Faculty Mentor Feedback
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-emerald-950 flex items-center gap-1.5">
+                                  <CheckCircle2 className="h-4 w-4 text-emerald-700" /> Faculty Mentor Feedback
+                                </span>
+                                {sub.reviewStatus && (
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
+                                    sub.reviewStatus === "accepted"
+                                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                      : sub.reviewStatus === "changes_requested"
+                                      ? "bg-amber-100 text-amber-800 border border-amber-300"
+                                      : "bg-blue-100 text-blue-800 border border-blue-300"
+                                  }`}>
+                                    {sub.reviewStatus.replace("_", " ")}
+                                  </span>
+                                )}
+                              </div>
                               {sub.reviewedAt && (
                                 <span className="text-[10px] text-emerald-700">
                                   Reviewed {new Date(sub.reviewedAt).toLocaleDateString()}
@@ -2471,8 +2494,9 @@ export function ProjectRoom() {
               >
                 <option value="todo">To Do</option>
                 <option value="in_progress">In Progress</option>
-                <option value="review">Review</option>
+                <option value="review">Under Review</option>
                 <option value="completed">Completed</option>
+                <option value="blocked">Blocked</option>
               </Select>
             </Field>
           </div>
@@ -3079,6 +3103,44 @@ export function ProjectRoom() {
             </p>
             <p className="font-semibold text-ink truncate">"{selectedSubForFeedback?.title}"</p>
           </div>
+
+          <Field label="Review Decision">
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setReviewDecision("accepted")}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                  reviewDecision === "accepted"
+                    ? "bg-emerald-50 border-emerald-400 text-emerald-800 shadow-sm"
+                    : "bg-[#FFFDF8] border-[#ECE5D8] text-[#5E646A]"
+                }`}
+              >
+                ✓ Accept
+              </button>
+              <button
+                type="button"
+                onClick={() => setReviewDecision("changes_requested")}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                  reviewDecision === "changes_requested"
+                    ? "bg-amber-50 border-amber-400 text-amber-800 shadow-sm"
+                    : "bg-[#FFFDF8] border-[#ECE5D8] text-[#5E646A]"
+                }`}
+              >
+                ⚠ Request Changes
+              </button>
+              <button
+                type="button"
+                onClick={() => setReviewDecision("reviewed")}
+                className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                  reviewDecision === "reviewed"
+                    ? "bg-blue-50 border-blue-400 text-blue-800 shadow-sm"
+                    : "bg-[#FFFDF8] border-[#ECE5D8] text-[#5E646A]"
+                }`}
+              >
+                ℹ Mark Reviewed
+              </button>
+            </div>
+          </Field>
 
           <Field label="Mentorship Review & Academic Guidance">
             <Textarea

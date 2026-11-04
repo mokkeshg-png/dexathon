@@ -4,6 +4,7 @@ import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import type { PlatformRole } from "@/types";
+import { canStudentAccessRoute, isStudentRole, studentHomeRoute } from "@/lib/studentAccess";
 import { Lock, AlertTriangle, ArrowLeft } from "lucide-react";
 
 interface ProtectedRouteProps {
@@ -62,14 +63,41 @@ export function ProtectedRoute({
 
   // Calculate role-appropriate fallback
   const userRole = profile?.role || "student";
-  const homeRoute =
-    userRole === "faculty"
+  const homeRoute = isStudentRole(userRole)
+    ? studentHomeRoute()
+    : userRole === "faculty"
       ? "/faculty"
       : userRole === "admin" || userRole === "college_admin" || userRole === "owner" || isAdmin
       ? "/admin"
       : userRole === "industry_partner"
       ? "/industry"
       : "/dashboard";
+
+  if (isStudentRole(userRole) && !canStudentAccessRoute(location.pathname)) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center p-4">
+        <Card className="max-w-md p-6 sm:p-8 text-center space-y-4 border-[#ECE5D8] bg-white shadow-card rounded-3xl">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-700 border border-amber-200">
+            <Lock className="h-7 w-7" />
+          </div>
+          <h2 className="font-serif text-2xl font-bold text-[#181B1F]">Student Access Restricted</h2>
+          <p className="text-xs sm:text-sm text-[#5E646A] leading-relaxed">
+            This page is not part of the student workspace. Faculty, college administration, billing, and platform-owner tools are blocked even if the URL is entered manually.
+          </p>
+          <div className="pt-2 flex justify-center gap-2">
+            <Link to={homeRoute}>
+              <Button variant="primary" size="sm">
+                <ArrowLeft className="h-3.5 w-3.5 mr-1" /> Return to Student Dashboard
+              </Button>
+            </Link>
+            <Link to="/student-guidelines">
+              <Button variant="outline" size="sm">Read student guidelines</Button>
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   // 4. Admin requirement (College Admin / Institutional Leadership)
   if (requireAdmin && !isAdmin) {

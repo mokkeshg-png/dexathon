@@ -199,7 +199,19 @@ export function processCampusQuery(
     };
   }
 
-  if (q.includes("how to create a project") || q.includes("how do i create a project")) {
+  if (q.includes("how to create a project") || q.includes("how do i create a project") || q.includes("how do i create a challenge") || q.includes("post a challenge") || q.includes("create a challenge")) {
+    if (currentProfile?.role === "industry_partner") {
+      return {
+        text: "As an Industry Partner on SYNAPTRA:\n1. Open your **Industry Bridge** dashboard (/industry).\n2. Click the **+ Post New Challenge** button.\n3. Enter the challenge problem statement, domain requirements, deliverables, deadlines, and prize or stipend offerings.\n4. Once published, authorized student and faculty teams can submit proposals!",
+        contextUpdate: context,
+      };
+    }
+    if (currentProfile?.role === "college_admin" || currentProfile?.role === "admin") {
+      return {
+        text: "As a College Administrator on SYNAPTRA:\n1. You oversee institutional departments, campus members, and subscriptions via your **Institution Dashboard** (/admin).\n2. Student and faculty members create, collaborate on, and lead academic projects.\n3. You can review campus project activity and compliance from the Campus Projects oversight tab.",
+        contextUpdate: context,
+      };
+    }
     return {
       text: "To create a project on SYNAPTRA:\n1. Click **Explore Projects** in the top navigation.\n2. Click the **+ Create Project** button.\n3. Fill in your project title, domains, required team skills, and open role openings.\n4. Once published, interested campus peers can submit join requests!",
       contextUpdate: context,

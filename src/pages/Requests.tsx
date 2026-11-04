@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import {
   fetchProjects,
@@ -60,6 +60,12 @@ function uniqueId(p?: Profile) {
 
 export function Requests() {
   const { user, profile } = useAuth();
+  if (profile?.role === "industry_partner") {
+    return <Navigate to="/industry?tab=applications" replace />;
+  }
+  if (profile?.role === "college_admin" || profile?.role === "admin") {
+    return <Navigate to="/admin?tab=invitations" replace />;
+  }
 
   const [activeTab, setActiveTab] = useState<RequestTab>("incoming");
   const [projects, setProjects] = useState<Project[]>([]);

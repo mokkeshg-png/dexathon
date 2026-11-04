@@ -12,6 +12,7 @@ import {
   Shield,
   Briefcase,
   Users,
+  UserPlus,
   Compass,
   LayoutDashboard,
   CheckCheck,
@@ -202,14 +203,32 @@ export function Navbar() {
                 <span className="text-[0.78rem] text-[#A09488] xl:hidden">Search...</span>
               </Link>
 
-              {/* Create Project CTA */}
-              <Link
-                to="/projects/new"
-                className="clay-btn clay-btn-primary hidden sm:inline-flex h-9 px-4 text-xs"
-              >
-                <PlusCircle className="h-3.5 w-3.5" />
-                <span>{role === "faculty" ? "Create Project" : "New Project"}</span>
-              </Link>
+              {/* Create Project CTA / Invite Members */}
+              {role === "industry_partner" ? (
+                <Link
+                  to="/industry"
+                  className="clay-btn clay-btn-primary hidden sm:inline-flex h-9 px-4 text-xs"
+                >
+                  <PlusCircle className="h-3.5 w-3.5" />
+                  <span>Publish Challenge</span>
+                </Link>
+              ) : (role === "admin" || role === "college_admin" || isCollegeAdmin) && !isOwner ? (
+                <Link
+                  to="/admin?tab=invitations"
+                  className="clay-btn clay-btn-primary hidden sm:inline-flex h-9 px-4 text-xs"
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  <span>Invite Members</span>
+                </Link>
+              ) : (
+                <Link
+                  to="/projects/new"
+                  className="clay-btn clay-btn-primary hidden sm:inline-flex h-9 px-4 text-xs"
+                >
+                  <PlusCircle className="h-3.5 w-3.5" />
+                  <span>{role === "faculty" ? "Create Project" : "New Project"}</span>
+                </Link>
+              )}
 
               {/* Notifications */}
               <div className="relative" ref={notifRef}>
@@ -362,22 +381,24 @@ export function Navbar() {
 
                     <div className="py-1.5 px-1.5 space-y-0.5">
                       <Link
-                        to="/profile"
+                        to={role === "industry_partner" ? "/industry?tab=organization" : (role === "admin" || role === "college_admin") ? "/admin?tab=college" : "/profile"}
                         onClick={() => setUserMenuOpen(false)}
                         className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-[#2E2A23] hover:bg-[#FAF4E6] rounded-2xl transition-colors"
                       >
                         <User className="h-4 w-4 text-[#A09488]" />
-                        My Portfolio & Profile
+                        {role === "industry_partner" ? "Organization Profile" : (role === "admin" || role === "college_admin") ? "Institution Profile" : "My Portfolio & Profile"}
                       </Link>
 
-                      <Link
-                        to="/requests"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-[#2E2A23] hover:bg-[#FAF4E6] rounded-2xl transition-colors"
-                      >
-                        <Inbox className="h-4 w-4 text-[#A09488]" />
-                        Invitations & Applications
-                      </Link>
+                      {role !== "industry_partner" && role !== "admin" && role !== "college_admin" && (
+                        <Link
+                          to="/requests"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-[#2E2A23] hover:bg-[#FAF4E6] rounded-2xl transition-colors"
+                        >
+                          <Inbox className="h-4 w-4 text-[#A09488]" />
+                          Invitations & Applications
+                        </Link>
+                      )}
 
                       <Link
                         to="/messages"
@@ -445,14 +466,16 @@ export function Navbar() {
                         Advanced Ecosystem
                       </div>
 
-                      <Link
-                        to="/industry"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-3 py-1.5 text-xs font-medium text-[#2E2A23] hover:bg-[#FAF4E6] rounded-2xl transition-colors"
-                      >
-                        <Briefcase className="h-3.5 w-3.5 text-[#8C6000]" />
-                        Industry Innovation Bridge
-                      </Link>
+                      {role !== "industry_partner" && (
+                        <Link
+                          to="/industry"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-3 py-1.5 text-xs font-medium text-[#2E2A23] hover:bg-[#FAF4E6] rounded-2xl transition-colors"
+                        >
+                          <Briefcase className="h-3.5 w-3.5 text-[#8C6000]" />
+                          Industry Innovation Bridge
+                        </Link>
+                      )}
 
                       {(role === "faculty" || isCollegeAdmin) && (
                         <Link
@@ -549,22 +572,42 @@ export function Navbar() {
 
           {user && (
             <div className="mt-4 pt-3 border-t border-[#F4EFE4] space-y-1.5">
-              <Link
-                to="/projects/new"
-                onClick={() => setMobileMenuOpen(false)}
-                className="clay-btn clay-btn-primary w-full h-10 text-xs"
-              >
-                <PlusCircle className="h-4 w-4" />
-                {role === "faculty" ? "Create Research Project" : "New Project"}
-              </Link>
+              {role === "industry_partner" ? (
+                <Link
+                  to="/industry"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="clay-btn clay-btn-primary w-full h-10 text-xs"
+                >
+                  <PlusCircle className="h-4 w-4" />
+                  Publish Challenge
+                </Link>
+              ) : (role === "admin" || role === "college_admin" || isCollegeAdmin) && !isOwner ? (
+                <Link
+                  to="/admin?tab=invitations"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="clay-btn clay-btn-primary w-full h-10 text-xs"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Invite Members
+                </Link>
+              ) : (
+                <Link
+                  to="/projects/new"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="clay-btn clay-btn-primary w-full h-10 text-xs"
+                >
+                  <PlusCircle className="h-4 w-4" />
+                  {role === "faculty" ? "Create Research Project" : "New Project"}
+                </Link>
+              )}
 
               <Link
-                to="/profile"
+                to={role === "industry_partner" ? "/industry?tab=organization" : (role === "admin" || role === "college_admin") ? "/admin?tab=college" : "/profile"}
                 onClick={() => setMobileMenuOpen(false)}
                 className="clay-nav-item w-full"
               >
                 <User className="h-4 w-4 text-[#A09488]" />
-                My Profile & Portfolio
+                {role === "industry_partner" ? "Organization Profile" : (role === "admin" || role === "college_admin") ? "Institution Profile" : "My Profile & Portfolio"}
               </Link>
 
               <button

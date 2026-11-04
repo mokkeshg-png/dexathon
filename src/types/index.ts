@@ -3,13 +3,13 @@ export type AccountStatus = "active" | "suspended" | "deleted";
 export type Proficiency = "beginner" | "intermediate" | "advanced";
 export type ProfileVisibility = "public" | "members" | "institution" | "private";
 export type ProjectVisibility = "public" | "private" | "restricted";
-export type ProjectStatus = "open" | "closed" | "completed" | "flagged" | "removed";
+export type ProjectStatus = "draft" | "published" | "candidate_discovery" | "team_formation" | "active" | "under_review" | "completed" | "archived" | "open" | "closed" | "flagged" | "removed";
 export type Difficulty = "beginner" | "intermediate" | "advanced";
 export type JoinStatus = "pending" | "accepted" | "rejected" | "withdrawn";
 export type InvitationStatus = "pending" | "accepted" | "declined" | "expired";
 export type MemberStatus = "invited" | "active" | "left" | "removed" | "declined";
 export type SystemRole = "owner" | "mentor" | "lead" | "member";
-export type TaskStatus = "todo" | "in_progress" | "review" | "completed";
+export type TaskStatus = "todo" | "in_progress" | "review" | "completed" | "blocked";
 export type TaskPriority = "low" | "medium" | "high" | "critical";
 export type AiConfidence = "high" | "medium" | "low";
 export type NotificationType =
@@ -44,8 +44,14 @@ export type ModerationAction = "warn" | "suspend" | "remove_content" | "escalate
 export type NoteCategory = "literature" | "experiment" | "meeting" | "idea";
 export type DocumentAccess = "members" | "owner_mentor";
 export type ProjectType =
-  | "Academic Project"
+  | "Personal Project"
+  | "Independent Team Project"
+  | "Faculty Academic Project"
+  | "College Innovation Project"
+  | "Industry Challenge"
+  | "Joint Industry Project"
   | "Research Project"
+  | "Academic Project"
   | "Final-Year Project"
   | "Hackathon"
   | "Innovation Project"
@@ -55,8 +61,14 @@ export type ProjectType =
   | "Interdisciplinary";
 
 export const PROJECT_TYPES: ProjectType[] = [
-  "Academic Project",
+  "Personal Project",
+  "Independent Team Project",
+  "Faculty Academic Project",
+  "College Innovation Project",
+  "Industry Challenge",
+  "Joint Industry Project",
   "Research Project",
+  "Academic Project",
   "Final-Year Project",
   "Hackathon",
   "Innovation Project",
@@ -849,6 +861,7 @@ export interface WeeklySubmission {
   facultyFeedback?: string;
   reviewedBy?: string;
   reviewedAt?: string;
+  reviewStatus?: "pending" | "accepted" | "changes_requested" | "reviewed";
   submittedAt: string;
 }
 
@@ -1001,7 +1014,7 @@ export interface IndustryChallenge {
   bountyOrGrant?: string;
   targetCollegeId?: string;
   deadline?: string;
-  status: "draft" | "open" | "reviewing" | "assigned" | "completed";
+  status: "draft" | "open" | "reviewing" | "assigned" | "completed" | "closed";
   createdAt: string;
   partner?: IndustryPartner;
 }

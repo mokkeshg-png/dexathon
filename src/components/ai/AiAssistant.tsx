@@ -66,13 +66,28 @@ export function AiAssistant() {
   // Initial welcome message
   useEffect(() => {
     if (messages.length === 0) {
+      const isIndustry = profile?.role === "industry_partner";
+      const isAdm = profile?.role === "college_admin" || profile?.role === "admin";
+      const isFac = profile?.role === "faculty";
       setMessages([
         {
           id: "welcome",
           sender: "ai",
-          text: `Hello ${
-            profile?.fullName ? profile.fullName.split(" ")[0] : "there"
-          }! I'm your Synaptra AI Campus Assistant. I can search student collaborators by technical skill, find faculty mentors, or recommend active campus research projects based on your interests.`,
+          text: isIndustry
+            ? `Hello ${
+                profile?.fullName ? profile.fullName.split(" ")[0] : "Partner"
+              }! I'm your Synaptra AI Assistant. I can help your organization discover candidate student talent by skills and explore research domains for your Industry Challenges.`
+            : isAdm
+            ? `Hello ${
+                profile?.fullName ? profile.fullName.split(" ")[0] : "Administrator"
+              }! I'm your Synaptra Institutional AI Assistant. I can assist with campus department skill metrics, faculty oversight, and institutional collaboration summaries.`
+            : isFac
+            ? `Hello Prof. ${
+                profile?.fullName ? profile.fullName.split(" ")[0] : "Mentor"
+              }! I'm your Synaptra Research & Mentoring Assistant. I can help you discover student research assistants by skill, analyze project prerequisites, and evaluate pod progress.`
+            : `Hello ${
+                profile?.fullName ? profile.fullName.split(" ")[0] : "there"
+              }! I'm your Synaptra AI Campus Assistant. I can search student collaborators by technical skill, find faculty mentors, or recommend active campus research projects based on your interests.`,
           timestamp: new Date(),
         },
       ]);
@@ -173,13 +188,37 @@ export function AiAssistant() {
     }
   };
 
-  const quickPrompts = [
-    { label: "🔍 Frontend students", query: "Show me students who know frontend development" },
-    { label: "🐍 Python + AI peers", query: "I need a student who knows Python and AI" },
-    { label: "🚀 Backend projects", query: "Find projects that need backend developers" },
-    { label: "🎓 AI faculty mentors", query: "Find faculty who have AI expertise" },
-    { label: "💡 Skills on campus", query: "What skills are available on this campus?" },
-  ];
+  const isIndustry = profile?.role === "industry_partner";
+  const isAdm = profile?.role === "college_admin" || profile?.role === "admin";
+  const isFac = profile?.role === "faculty";
+  const quickPrompts = isIndustry
+    ? [
+        { label: "🔍 React & AI talent", query: "Show me candidate students who know React and AI" },
+        { label: "🐍 Python candidates", query: "Find students with Python and Machine Learning skills" },
+        { label: "💡 Campus skill pool", query: "What skills are available on this campus?" },
+        { label: "🏢 Post a challenge", query: "How do I create a challenge for students?" },
+      ]
+    : isAdm
+    ? [
+        { label: "📊 Campus skill inventory", query: "What skills are available on this campus?" },
+        { label: "🎓 Faculty expertise count", query: "Show me faculty by department and research expertise" },
+        { label: "⚡ Department coverage", query: "What departments have registered students and faculty?" },
+        { label: "👥 Member seat metrics", query: "How many students and faculty are enrolled?" },
+      ]
+    : isFac
+    ? [
+        { label: "🔍 Python & ML students", query: "Find students with Python and Machine Learning skills" },
+        { label: "🚀 Full-stack researchers", query: "Show me students who know React and Node.js" },
+        { label: "💡 Department skill pool", query: "What skills are available on this campus?" },
+        { label: "📊 Research pod guide", query: "How do I create a research project?" },
+      ]
+    : [
+        { label: "🔍 Frontend students", query: "Show me students who know frontend development" },
+        { label: "🐍 Python + AI peers", query: "I need a student who knows Python and AI" },
+        { label: "🚀 Backend projects", query: "Find projects that need backend developers" },
+        { label: "🎓 AI faculty mentors", query: "Find faculty who have AI expertise" },
+        { label: "💡 Skills on campus", query: "What skills are available on this campus?" },
+      ];
 
   return (
     <div className="fixed bottom-6 right-6 z-50">

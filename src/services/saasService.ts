@@ -336,10 +336,14 @@ export async function fetchCollegeSubscriptions(_collegeId?: string): Promise<Co
 // 3. PAYMENT & REVENUE SERVICES
 // =============================================================================
 
-export async function fetchPaymentTransactions(_collegeId?: string): Promise<PaymentTransaction[]> {
+export async function fetchPaymentTransactions(collegeId?: string): Promise<PaymentTransaction[]> {
   if (isSupabaseConfigured && supabase) {
     try {
-      const { data, error } = await supabase.from("payment_transactions").select("*").order("created_at", { ascending: false });
+      let query = supabase.from("payment_transactions").select("*").order("created_at", { ascending: false });
+      if (collegeId) {
+        query = query.eq("college_id", collegeId);
+      }
+      const { data, error } = await query;
       if (!error && data && data.length > 0) {
         return data.map((t: any) => ({
           id: t.id,
@@ -358,7 +362,7 @@ export async function fetchPaymentTransactions(_collegeId?: string): Promise<Pay
       }
     } catch {}
   }
-  return _cachedPayments;
+  return collegeId ? _cachedPayments.filter(p => p.collegeId === collegeId) : _cachedPayments;
 }
 
 // =============================================================================
@@ -602,7 +606,12 @@ export async function fetchStudentRecoveryPaths(studentId?: string): Promise<Kno
 // 7. INSTITUTIONAL SUBSCRIPTIONS, MEMBERSHIP & CHALLENGE APPLICATIONS
 // =============================================================================
 
-export async function createCollegeSubscription(sub: Omit<CollegeSubscription, "id">): Promise<CollegeSubscription> {
+export async function createCollegeSubscription(sub: Omit<CollegeSubscription, "id">, actorRole?: string): Promise<CollegeSubscription> {
+  // SECURITY: Industry partners and students cannot manage college subscriptions
+  if (actorRole === "industry_partner" || actorRole === "student" || actorRole === "faculty") {
+    throw new Error("Unauthorized: Only College Administrators can manage subscriptions.");
+  }
+
   const newSub: CollegeSubscription = {
     ...sub,
     id: `sub-${Date.now()}`,
@@ -700,7 +709,10 @@ export async function fetchCollegeMembers(collegeId?: string): Promise<CollegeMe
   return collegeId ? _cachedMemberships.filter(m => m.collegeId === collegeId) : _cachedMemberships;
 }
 
-export async function addCollegeMember(membership: Omit<CollegeMembership, "id" | "joinedAt">): Promise<CollegeMembership> {
+export async function addCollegeMember(membership: Omit<CollegeMembership, "id" | "joinedAt">, callerRole?: string): Promise<CollegeMembership> {
+  if (callerRole && callerRole !== "college_admin" && callerRole !== "admin" && callerRole !== "owner") {
+    throw new Error("Unauthorized: Only College Administrators can manage institutional members.");
+  }
   const newMem: CollegeMembership = {
     ...membership,
     id: `mem-${Date.now()}`,
@@ -726,6 +738,25 @@ export async function addCollegeMember(membership: Omit<CollegeMembership, "id" 
   return newMem;
 }
 
+export async function removeCollegeMember(collegeId: string, userId: string, adminId?: string): Promise<void> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase.from("college_memberships").delete().eq("college_id", collegeId).eq("user_id", userId);
+      if (adminId) {
+        await supabase.from("admin_actions").insert({
+          admin_id: adminId,
+          action: "remove_college_member",
+          target_type: "user",
+          target_id: userId,
+          metadata: { college_id: collegeId, reason: "Revoked by institutional administrator" },
+        });
+      }
+    } catch {}
+  }
+  _cachedMemberships = _cachedMemberships.filter(m => !(m.collegeId === collegeId && m.userId === userId));
+}
+
+
 export async function fetchCollegeInvitations(collegeId?: string): Promise<CollegeInvitation[]> {
   if (isSupabaseConfigured && supabase && collegeId) {
     try {
@@ -748,7 +779,10 @@ export async function fetchCollegeInvitations(collegeId?: string): Promise<Colle
   return collegeId ? _cachedInvitations.filter(i => i.collegeId === collegeId) : _cachedInvitations;
 }
 
-export async function createCollegeInvitation(invitation: Omit<CollegeInvitation, "id" | "token" | "status" | "createdAt" | "expiresAt">): Promise<CollegeInvitation> {
+export async function createCollegeInvitation(invitation: Omit<CollegeInvitation, "id" | "token" | "status" | "createdAt" | "expiresAt">, callerRole?: string): Promise<CollegeInvitation> {
+  if (callerRole && callerRole !== "college_admin" && callerRole !== "admin" && callerRole !== "owner") {
+    throw new Error("Unauthorized: Only College Administrators can dispatch institutional invitations.");
+  }
   const newInv: CollegeInvitation = {
     ...invitation,
     id: `inv-${Date.now()}`,
@@ -847,6 +881,57 @@ export async function createIndustryChallenge(challenge: Omit<IndustryChallenge,
   return newChal;
 }
 
+export async function updateIndustryChallenge(
+  partnerId: string,
+  challengeId: string,
+  patch: Partial<IndustryChallenge>
+): Promise<IndustryChallenge> {
+  const challenges = await fetchIndustryChallenges();
+  const target = challenges.find((c) => c.id === challengeId);
+  if (!target) {
+    throw new Error("Challenge not found.");
+  }
+  if (target.partnerId !== partnerId) {
+    throw new Error("Unauthorized: You can only edit challenges owned by your organization.");
+  }
+
+  const updated: IndustryChallenge = {
+    ...target,
+    ...patch,
+  };
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase
+        .from("industry_challenges")
+        .update({
+          ...(patch.title !== undefined && { title: patch.title }),
+          ...(patch.problemStatement !== undefined && { problem_statement: patch.problemStatement }),
+          ...(patch.domain !== undefined && { domain: patch.domain }),
+          ...(patch.requiredSkills !== undefined && { required_skills: patch.requiredSkills }),
+          ...(patch.bountyOrGrant !== undefined && { bounty_or_grant: patch.bountyOrGrant }),
+          ...(patch.deadline !== undefined && { deadline: patch.deadline }),
+          ...(patch.status !== undefined && { status: patch.status }),
+          ...(patch.expectedOutcomes !== undefined && { expected_outcomes: patch.expectedOutcomes }),
+        })
+        .eq("id", challengeId);
+    } catch {}
+  }
+
+  const idx = SAMPLE_CHALLENGES.findIndex((c) => c.id === challengeId);
+  if (idx !== -1) {
+    SAMPLE_CHALLENGES[idx] = updated;
+  }
+  return updated;
+}
+
+export async function closeIndustryChallenge(
+  partnerId: string,
+  challengeId: string
+): Promise<IndustryChallenge> {
+  return updateIndustryChallenge(partnerId, challengeId, { status: "closed" });
+}
+
 export async function fetchChallengeApplications(challengeId?: string): Promise<ChallengeApplication[]> {
   if (isSupabaseConfigured && supabase && challengeId) {
     try {
@@ -872,7 +957,15 @@ export async function fetchChallengeApplications(challengeId?: string): Promise<
   return challengeId ? _cachedChallengeApplications.filter(a => a.challengeId === challengeId) : _cachedChallengeApplications;
 }
 
-export async function submitChallengeApplication(app: Omit<ChallengeApplication, "id" | "createdAt">): Promise<ChallengeApplication> {
+export async function submitChallengeApplication(
+  app: Omit<ChallengeApplication, "id" | "createdAt">,
+  applicantRole?: string
+): Promise<ChallengeApplication> {
+  // SECURITY: Industry partners cannot submit student applications to challenges
+  if (applicantRole === "industry_partner") {
+    throw new Error("Unauthorized: Industry partners cannot submit student applications to challenges.");
+  }
+
   const newApp: ChallengeApplication = {
     ...app,
     id: `capp-${Date.now()}`,
@@ -902,7 +995,30 @@ export async function submitChallengeApplication(app: Omit<ChallengeApplication,
   return newApp;
 }
 
-export async function updateChallengeApplicationStatus(id: string, status: ChallengeApplication["status"], feedback?: string): Promise<void> {
+export async function updateChallengeApplicationStatus(
+  id: string,
+  status: ChallengeApplication["status"],
+  feedback?: string,
+  actorRole?: string,
+  reviewerPartnerId?: string
+): Promise<void> {
+  // SECURITY: Students cannot approve or reject challenge applications
+  if (actorRole === "student") {
+    throw new Error("Unauthorized: Students cannot review or approve challenge applications.");
+  }
+
+  // SECURITY: Industry partners can only review applications for their own organization's challenges
+  if (reviewerPartnerId) {
+    const targetApp = _cachedChallengeApplications.find((a) => a.id === id);
+    if (targetApp) {
+      const allChals = await fetchIndustryChallenges();
+      const parentChal = allChals.find((c) => c.id === targetApp.challengeId);
+      if (parentChal && parentChal.partnerId !== reviewerPartnerId) {
+        throw new Error("Unauthorized: You can only review applications belonging to your organization's challenges.");
+      }
+    }
+  }
+
   if (isSupabaseConfigured && supabase) {
     try {
       await supabase.from("challenge_applications").update({
@@ -927,7 +1043,14 @@ export async function fetchCollegeById(id: string): Promise<College | null> {
   return colleges.find((c) => c.id === id) || colleges[0] || null;
 }
 
-export async function updateCollegeBranding(id: string, branding: Partial<College>): Promise<College> {
+export async function updateCollegeBranding(
+  id: string,
+  branding: Partial<College>,
+  callerCollegeId?: string
+): Promise<College> {
+  if (callerCollegeId && callerCollegeId !== id) {
+    throw new Error("Unauthorized: College administrators can only update branding for their own institution.");
+  }
   const cols = await fetchColleges();
   const c = cols.find((col) => col.id === id) || cols[0];
   Object.assign(c, branding);
@@ -1020,21 +1143,50 @@ export async function toggleUserAccessStatus(userId: string, newStatus: string):
 }
 
 export async function acceptInvitation(email: string, userId: string): Promise<boolean> {
-  const inv = _cachedInvitations.find((i) => i.email.toLowerCase() === email.toLowerCase());
-  if (inv) {
-    inv.status = 'accepted';
+  const normEmail = email.trim().toLowerCase();
+  let collegeId: string | undefined;
+  let role: "student" | "faculty" | "industry_partner" = "student";
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data } = await supabase
+        .from("college_invitations")
+        .select("*")
+        .eq("email", normEmail)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        collegeId = data.college_id;
+        role = data.role;
+        await supabase
+          .from("college_invitations")
+          .update({ status: "accepted" })
+          .eq("id", data.id);
+      }
+    } catch {}
+  }
+
+  const cachedInv = _cachedInvitations.find(
+    (i) => i.email.toLowerCase() === normEmail && i.status === "pending"
+  );
+  if (cachedInv) {
+    cachedInv.status = "accepted";
+    collegeId = collegeId || cachedInv.collegeId;
+    role = role || cachedInv.role;
+  }
+
+  if (collegeId) {
     await addCollegeMember({
-      collegeId: inv.collegeId,
+      collegeId,
       userId,
-      role: inv.role,
+      role,
       isSeatActive: true,
     });
   }
-  if (isSupabaseConfigured && supabase) {
-    try {
-      await supabase.from('college_invitations').update({ status: 'accepted' }).eq('email', email);
-    } catch {}
-  }
+
   return true;
 }
 

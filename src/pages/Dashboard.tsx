@@ -14,8 +14,6 @@ import {
   fetchMembershipsByUser,
   fetchJoinRequests,
   fetchJoinRequestsByProjects,
-  fetchMentorshipRequests,
-  reviewMentorship,
   reviewApplication,
   withdrawApplication,
   fetchAllProfiles,
@@ -26,7 +24,10 @@ import { ProjectCard, PersonCard } from "@/components/projects/ProjectCard";
 import { AiProjectExplanation } from "@/components/projects/AiProjectExplanation";
 import { Button } from "@/components/ui/Button";
 import { EmptyState, Progress } from "@/components/ui/Card";
-import type { Project, ProjectMember, JoinRequest, MentorshipRequest, Profile, AiAnalysisRecord } from "@/types";
+import { DashboardSkeleton } from "@/components/ui/Skeleton";
+import { StudentAccessGuidelinesModal } from "@/components/student/StudentAccessGuidelinesModal";
+import { BookOpen } from "lucide-react";
+import type { Project, ProjectMember, JoinRequest, Profile, AiAnalysisRecord } from "@/types";
 import { DetailedMonitoringModal } from "@/components/faculty/DetailedMonitoringModal";
 import {
   Sparkles,
@@ -65,7 +66,6 @@ export function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [members, setMembers] = useState<ProjectMember[]>([]);
   const [joinRequests, setJoinRequests] = useState<JoinRequest[]>([]);
-  const [mentorshipRequests, setMentorshipRequests] = useState<MentorshipRequest[]>([]);
   const [allProfiles, setAllProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -75,6 +75,7 @@ export function Dashboard() {
 
   const [addSkillOpen, setAddSkillOpen] = useState(false);
   const [addInterestOpen, setAddInterestOpen] = useState(false);
+  const [guidelinesOpen, setGuidelinesOpen] = useState(false);
 
   const [monitoringProject, setMonitoringProject] = useState<Project | null>(null);
 
@@ -86,10 +87,9 @@ export function Dashboard() {
       setLoading(true);
       try {
         // SECURITY: Fetch projects scoped to user's college (multi-tenancy)
-        const [projs, jrs, mrs, profiles, memberships] = await Promise.all([
+        const [projs, jrs, profiles, memberships] = await Promise.all([
           fetchProjects(collegeId),
           fetchJoinRequests(undefined, user!.id),
-          fetchMentorshipRequests(undefined, user!.id),
           fetchAllProfiles(),
           fetchMembershipsByUser(user!.id),
         ]);
@@ -102,23 +102,23 @@ export function Dashboard() {
         const connectedProjectIds = new Set([...ownedProjectIds, ...memberProjectIds, ...appliedProjectIds]);
         const connectedIds = [...connectedProjectIds];
 
-        // Single batch query — replaces N×fetchProjectMembers
-        const membersMap = await fetchProjectMembersByProjects(connectedIds);
+        // Fetch members and incoming join requests concurrently in parallel
+        const [membersMap, allReceivedJrs] = await Promise.all([
+          fetchProjectMembersByProjects(connectedIds),
+          connectedIds.length > 0 && ownedProjectIds.size > 0
+            ? fetchJoinRequestsByProjects([...ownedProjectIds]).then((rows) =>
+                rows.filter((jr) => jr.applicantId !== user!.id)
+              )
+            : Promise.resolve([]),
+        ]);
+
         const allMembers: ProjectMember[] = [];
         for (const members of membersMap.values()) allMembers.push(...members);
-
-        // Fetch incoming join requests for owned projects in one batch query
-        const allReceivedJrs = connectedIds.length > 0
-          ? await fetchJoinRequestsByProjects([...ownedProjectIds]).then((rows) =>
-              rows.filter((jr) => jr.applicantId !== user!.id)
-            )
-          : [];
 
         if (cancelled) return;
         setProjects(projs);
         setMembers(allMembers);
         setJoinRequests([...jrs, ...allReceivedJrs]);
-        setMentorshipRequests(mrs);
         setAllProfiles(profiles);
       } catch (err) {
         console.error("Dashboard load error:", err);
@@ -280,11 +280,7 @@ export function Dashboard() {
   }
 
   if (loading) {
-    return (
-      <div className="flex h-96 items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-navy" />
-      </div>
-    );
+    return <DashboardSkeleton />;
   }
 
   const submittedApplications = joinRequests.filter(
@@ -293,9 +289,6 @@ export function Dashboard() {
   const ownedProjectIds = new Set(projects.filter((p) => p.ownerId === user.id).map((p) => p.id));
   const receivedApplications = joinRequests.filter(
     (jr) => ownedProjectIds.has(jr.projectId) && jr.status === "pending" && jr.applicantId !== user.id
-  );
-  const facultyMentorshipRequests = mentorshipRequests.filter(
-    (mr) => mr.facultyId === user.id && mr.status === "pending"
   );
 
   function getProjectStats(projectId: string) {
@@ -307,12 +300,6 @@ export function Dashboard() {
       await withdrawApplication(user.id, reqId);
       setJoinRequests((prev) => prev.map((jr) => jr.id === reqId ? { ...jr, status: "withdrawn" } : jr));
     }
-  };
-
-  const handleMentorshipResponse = async (reqId: string, accept: boolean) => {
-    await reviewMentorship(user.id, reqId, accept);
-    setMentorshipRequests((prev) => prev.map((mr) => mr.id === reqId ? { ...mr, status: accept ? "accepted" : "rejected" } : mr));
-    refresh();
   };
 
   const handleReviewJoinApp = async (reqId: string, decision: "accepted" | "rejected") => {
@@ -337,6 +324,15 @@ export function Dashboard() {
             <span className="text-xs text-[#8C8372] font-semibold bg-white/60 rounded-full px-2.5 py-0.5 border border-[#ECE5D8]">
               {profile.institution}
             </span>
+            <button
+              type="button"
+              onClick={() => setGuidelinesOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-0.5 text-xs font-bold border border-[#FFD040] bg-[#FFFBEA] text-[#7A4D00] hover:bg-[#FFF4D0] transition-colors cursor-pointer shadow-xs"
+              title="View complete Student Role Guidelines & Permissions A to Z"
+            >
+              <BookOpen className="h-3.5 w-3.5 text-[#BD7D14]" />
+              <span>Student Guidelines & Rules (A–Z)</span>
+            </button>
           </div>
           <h1 className="font-serif text-3xl sm:text-4xl font-extrabold tracking-tight text-[#181B1F] leading-tight">
             Welcome back,{" "}
@@ -441,49 +437,6 @@ export function Dashboard() {
             <Button variant="primary" size="sm" className="whitespace-nowrap">Complete Setup →</Button>
           </Link>
         </div>
-      )}
-
-      {/* Faculty Mentorship Requests */}
-      {facultyMentorshipRequests.length > 0 && (
-        <section className="space-y-4">
-          <div className="flex items-center gap-2">
-            <h2 className="font-serif text-2xl font-bold text-[#181B1F]">
-              Pending Mentorship Requests ({facultyMentorshipRequests.length})
-            </h2>
-            <span className="clay-badge clay-badge-brass">Action Needed</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {facultyMentorshipRequests.map((req) => {
-              const project = projects.find((p) => p.id === req.projectId);
-              const owner = allProfiles.find((pr) => pr.userId === project?.ownerId);
-              return (
-                <div key={req.id} className="clay-card p-5 space-y-3.5">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="clay-badge clay-badge-gold text-[10px]">
-                        {project?.domains[0] || "Research"}
-                      </span>
-                      <h4 className="font-serif font-bold text-[#181B1F] text-lg mt-1">{project?.title}</h4>
-                      <p className="text-xs text-[#5E646A]">Lead: {owner?.fullName || "Student Lead"}</p>
-                    </div>
-                    <span className="clay-badge clay-badge-slate text-[10px]">Direct Request</span>
-                  </div>
-                  <div className="clay-inset p-3 text-xs text-[#5E646A] italic">
-                    "{req.message}"
-                  </div>
-                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#ECE5D8]">
-                    <Button size="sm" variant="outline" onClick={() => handleMentorshipResponse(req.id, false)}>
-                      Decline
-                    </Button>
-                    <Button size="sm" variant="primary" onClick={() => handleMentorshipResponse(req.id, true)}>
-                      Accept Mentorship
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
       )}
 
       {/* Received Join Applications */}
@@ -739,7 +692,7 @@ export function Dashboard() {
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <span className={`clay-badge text-[10px] ${isOwner ? "clay-badge-gold" : isMentor ? "clay-badge-green" : "clay-badge-slate"}`}>
-                        {isOwner ? "Project Owner" : isMentor ? "Faculty Mentor" : "Team Member"}
+                        {isOwner ? "Project Lead" : "Team Member"}
                       </span>
                       <span className="text-[11px] text-[#8C8372] uppercase tracking-wider font-bold">
                         {proj.status}
@@ -942,6 +895,12 @@ export function Dashboard() {
         open={!!monitoringProject}
         onClose={() => setMonitoringProject(null)}
         project={monitoringProject}
+      />
+
+      {/* Student Access Guidelines & Code of Conduct (A-Z) */}
+      <StudentAccessGuidelinesModal
+        open={guidelinesOpen}
+        onClose={() => setGuidelinesOpen(false)}
       />
     </div>
   );

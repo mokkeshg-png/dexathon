@@ -14,10 +14,12 @@ import {
 import { AcademicProjectCreatorModal } from "@/components/faculty/AcademicProjectCreatorModal";
 import { DetailedMonitoringModal } from "@/components/faculty/DetailedMonitoringModal";
 import { FacultyStudentDirectory } from "@/components/faculty/FacultyStudentDirectory";
+import { FacultyAccessGuidelinesModal } from "@/components/faculty/FacultyAccessGuidelinesModal";
 import { Button } from "@/components/ui/Button";
 import { Card, Badge } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import { Textarea } from "@/components/ui/Field";
+import { FacultyDashboardSkeleton } from "@/components/ui/Skeleton";
 import type { Project, Profile, JoinRequest, MentorshipRequest, ProjectMember } from "@/types";
 import {
   Building2,
@@ -66,6 +68,7 @@ export function FacultyDashboard() {
   // Modals
   const [creatorModalOpen, setCreatorModalOpen] = useState(false);
   const [monitoringProject, setMonitoringProject] = useState<Project | null>(null);
+  const [guidelinesOpen, setGuidelinesOpen] = useState(false);
 
   // Review Feedback Modal
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -177,14 +180,7 @@ export function FacultyDashboard() {
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-[#FAF7EE] flex items-center justify-center">
-        <div className="flex items-center gap-3 text-sm text-[#7B828A] font-medium">
-          <div className="w-5 h-5 border-2 border-[#181B1F] border-t-[#FFC812] rounded-full animate-spin" />
-          Loading Faculty Workspace...
-        </div>
-      </div>
-    );
+    return <FacultyDashboardSkeleton />;
   }
 
   return (
@@ -203,6 +199,14 @@ export function FacultyDashboard() {
             <span className="text-xs text-[#7B828A] font-mono bg-[#FAF7EE] rounded-full px-3 py-1 border border-[#ECE5D8]">
               {profile?.department || "Academic Department"}
             </span>
+            <button
+              type="button"
+              onClick={() => setGuidelinesOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold border border-[#FFD040] bg-[#FFFBEA] text-[#7A4D00] hover:bg-[#FFF4D0] transition-colors cursor-pointer shadow-xs"
+            >
+              <BookOpen className="h-3.5 w-3.5 text-[#BD7D14]" />
+              <span>Faculty Governance & Rules (A–Z)</span>
+            </button>
           </div>
 
           <h1 className="font-serif text-3xl sm:text-4xl font-extrabold tracking-tight text-[#181B1F]">
@@ -692,6 +696,12 @@ export function FacultyDashboard() {
           </div>
         </Modal>
       )}
+
+      {/* FACULTY ACCESS CONTROL & GOVERNANCE MODAL */}
+      <FacultyAccessGuidelinesModal
+        open={guidelinesOpen}
+        onClose={() => setGuidelinesOpen(false)}
+      />
     </div>
   );
 }

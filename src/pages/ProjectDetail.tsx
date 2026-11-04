@@ -35,7 +35,7 @@ import {
   Sparkles, Users, Calendar, Shield, Clock,
   CheckCircle2, Lock, Flag, ArrowRight,
   GraduationCap, Check, X, Loader2,
-  FileText, ExternalLink
+  FileText, ExternalLink, Briefcase
 } from "lucide-react";
 
 export function ProjectDetail() {
@@ -148,6 +148,18 @@ export function ProjectDetail() {
   const handleApply = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !profile) { navigate("/login"); return; }
+    if (profile.role === "industry_partner") {
+      setApplyError("Industry partners cannot apply to join student project teams. Collaborate via Industry Bridge challenges.");
+      return;
+    }
+    if (profile.role === "college_admin" || profile.role === "admin") {
+      setApplyError("College administrators cannot apply to join student project teams. Campus projects are monitored via the Administration Console.");
+      return;
+    }
+    if (profile.role === "faculty") {
+      setApplyError("Faculty members guide projects as academic mentors and do not apply as student team applicants.");
+      return;
+    }
     setApplyError(null);
     setApplyLoading(true);
     try {
@@ -276,6 +288,26 @@ export function ProjectDetail() {
               <Link to={`/projects/${project.id}/room`} className="w-full">
                 <Button size="lg" variant="primary" className="w-full">Enter Project Room <ArrowRight className="h-4 w-4 ml-1.5" /></Button>
               </Link>
+            ) : (user?.role === "industry_partner" || profile?.role === "industry_partner") ? (
+              <div className="clay-card-cream p-4 text-center space-y-2 border border-[#FFE785]">
+                <p className="text-xs font-bold text-[#181B1F]">Industry Partner View</p>
+                <p className="text-[11px] text-[#5E646A]">Academic project participation is managed through Industry Bridge challenges.</p>
+                <Link to="/industry" className="block w-full">
+                  <Button size="sm" variant="outline" className="w-full text-xs">
+                    <Briefcase className="h-4 w-4 mr-1.5" /> Sponsor via Industry Bridge
+                  </Button>
+                </Link>
+              </div>
+            ) : (user?.role === "college_admin" || profile?.role === "college_admin" || user?.role === "admin" || profile?.role === "admin") ? (
+              <div className="clay-card-cream p-4 text-center space-y-2 border border-[#FFE785]">
+                <p className="text-xs font-bold text-[#181B1F]">College Administrator View</p>
+                <p className="text-[11px] text-[#5E646A]">Campus research pods are managed by student leads and faculty mentors.</p>
+                <Link to="/admin?tab=projects" className="block w-full">
+                  <Button size="sm" variant="outline" className="w-full text-xs">
+                    <Shield className="h-4 w-4 mr-1.5" /> Campus Oversight Console
+                  </Button>
+                </Link>
+              </div>
             ) : userApplication ? (
               <div className="clay-card-cream p-4 text-center space-y-2 border border-[#FFE785]">
                 <p className="text-xs font-bold text-[#181B1F]">Application Submitted</p>
@@ -293,7 +325,7 @@ export function ProjectDetail() {
                 <Button size="lg" variant="primary" onClick={() => { if (!user) navigate(`/login?redirect=/projects/${project.id}`); else setApplyOpen(true); }} className="w-full">
                   Apply to Join Team
                 </Button>
-                {user?.role === "faculty" && !userMentorshipRequest && (
+                {profile?.role === "faculty" && !userMentorshipRequest && (
                   <Button variant="outline" onClick={() => setMentorOpen(true)} className="w-full text-xs">
                     <GraduationCap className="h-4 w-4" /> Offer Faculty Mentorship
                   </Button>

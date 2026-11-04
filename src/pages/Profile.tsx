@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, Navigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/context/ToastContext";
 import {
@@ -42,10 +42,12 @@ import type {
 } from "@/types";
 import { ROLE_TEMPLATES } from "@/types";
 import {
+  Briefcase,
   Building2,
   Globe,
   Mail,
   Edit,
+  Shield,
   ShieldCheck,
   Flag,
   Lock,
@@ -92,6 +94,13 @@ export function Profile() {
   const toast = useToast();
 
   const targetUserId = id || user?.id;
+
+  if (authProfile?.role === "industry_partner" && (!id || id === user?.id)) {
+    return <Navigate to="/industry?tab=organization" replace />;
+  }
+  if ((authProfile?.role === "college_admin" || authProfile?.role === "admin") && (!id || id === user?.id)) {
+    return <Navigate to="/admin?tab=college" replace />;
+  }
 
   const [profile, setProfile] = useState<ProfileType | null>(null);
   const [ownedProjects, setOwnedProjects] = useState<Project[]>([]);
@@ -1008,7 +1017,13 @@ export function Profile() {
   }
 
   const isFaculty = !!profile.designation || profile.role === "faculty";
-  const uid = `${isFaculty ? "FAC" : "STU"}-${profile.userId.substring(0, 6).toUpperCase()}`;
+  const isIndustry = profile.role === "industry_partner";
+  const isCollegeAdminProfile = profile.role === "college_admin" || profile.role === "admin";
+  const uid = `${isCollegeAdminProfile ? "ADM" : isIndustry ? "IND" : isFaculty ? "FAC" : "STU"}-${profile.userId.substring(0, 6).toUpperCase()}`;
+
+  if (isSelf && (isIndustry || isCollegeAdminProfile)) {
+    return <Navigate to={isIndustry ? "/industry?tab=organization" : "/admin?tab=college"} replace />;
+  }
   const completeness = profile.profileCompleteness ?? 50;
 
   return (
@@ -1203,6 +1218,32 @@ export function Profile() {
                     <Edit className="h-4 w-4" /> Edit Profile
                   </Button>
                 </>
+              ) : authProfile?.role === "industry_partner" ? (
+                <>
+                  <Link to="/industry">
+                    <Button variant="secondary">
+                      <Briefcase className="h-4 w-4" /> View Open Challenges
+                    </Button>
+                  </Link>
+                  <Link to={`/messages?userId=${profile.userId}`}>
+                    <Button variant="ghost">
+                      <Mail className="h-4 w-4" /> Message
+                    </Button>
+                  </Link>
+                </>
+              ) : (authProfile?.role === "college_admin" || authProfile?.role === "admin") ? (
+                <>
+                  <Link to="/admin?tab=members">
+                    <Button variant="secondary">
+                      <Shield className="h-4 w-4" /> Manage Institutional Members
+                    </Button>
+                  </Link>
+                  <Link to={`/messages?userId=${profile.userId}`}>
+                    <Button variant="ghost">
+                      <Mail className="h-4 w-4" /> Message
+                    </Button>
+                  </Link>
+                </>
               ) : (
                 <>
                   {isFaculty ? (
@@ -1258,8 +1299,8 @@ export function Profile() {
                 <Badge tone="green">
                   <ShieldCheck className="h-3 w-3 mr-1" /> Institutional Verified
                 </Badge>
-                <Badge tone={isFaculty ? "brass" : "navy"}>
-                  {isFaculty ? "FACULTY MENTOR" : "STUDENT RESEARCHER"}
+                <Badge tone={isCollegeAdminProfile ? "red" : isFaculty ? "brass" : isIndustry ? "purple" : "navy"}>
+                  {isCollegeAdminProfile ? "COLLEGE ADMIN" : isFaculty ? "FACULTY MENTOR" : isIndustry ? "INDUSTRY PARTNER" : "STUDENT RESEARCHER"}
                 </Badge>
                 {profile.visibility === "private" ? (
                   <Badge tone="amber">
@@ -1275,8 +1316,7 @@ export function Profile() {
 
               {/* Dynamic Headline (LinkedIn style) */}
               <p className="mt-1 text-sm font-semibold text-navy-800">
-                {profile.headline ||
-                  `${profile.degreeProgram || "Undergraduate Scholar"} • ${profile.department}`}
+                {profile.headline || (isCollegeAdminProfile ? `Institutional Administration • ${profile.institution}` : isIndustry ? (profile.institution || "Industry Organization") : isFaculty ? `${profile.designation || "Faculty Mentor"} • ${profile.department}` : `${profile.degreeProgram || "Undergraduate Scholar"} • ${profile.department}`)}
               </p>
 
               {/* Institution & Location */}
@@ -1291,7 +1331,7 @@ export function Profile() {
                     {profile.location}
                   </span>
                 )}
-                {profile.academicYear && (
+                {!isIndustry && !isCollegeAdminProfile && !isFaculty && profile.academicYear && (
                   <span className="flex items-center gap-1">
                     <GraduationCap className="h-3.5 w-3.5 text-ink-400" />
                     Class of {profile.graduationYear || (new Date().getFullYear() + 4 - profile.academicYear)}
@@ -2262,10 +2302,10 @@ export function Profile() {
         {/* Right Sidebar (1 Col): AI Telemetry & Contact Meta */}
         <div className="space-y-6">
           {/* AI Skill Score & Compatibility Engine */}
-          <SkillScorePanel
+          {!isIndustry && !isCollegeAdminProfile && !isFaculty && <SkillScorePanel
             userId={profile.userId}
             profile={profile}
-          />
+          />}
 
           {/* Research Domains / Focus Areas */}
           <Card className="p-5 shadow-card space-y-4">
@@ -2909,31 +2949,63 @@ export function Profile() {
                 <Input value={department} onChange={(e) => setDepartment(e.target.value)} />
               </Field>
 
-              <Field label="Degree Program">
-                <Input value={degreeProgram} onChange={(e) => setDegreeProgram(e.target.value)} />
-              </Field>
+              {isFaculty ? (
+                <>
+                  <Field label="Academic Designation" hint="e.g. Associate Professor, Department Chair, Senior Research Fellow">
+                    <Input value={designation} onChange={(e) => setDesignation(e.target.value)} />
+                  </Field>
 
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="Academic Year (1-6)">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={6}
-                    value={academicYear || ""}
-                    onChange={(e) => setAcademicYear(Number(e.target.value))}
-                  />
-                </Field>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Research Experience (Years)">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={50}
+                        value={researchExperience || ""}
+                        onChange={(e) => setResearchExperience(Number(e.target.value))}
+                      />
+                    </Field>
 
-                <Field label="Graduation Year">
-                  <Input
-                    type="number"
-                    min={2020}
-                    max={2035}
-                    value={graduationYear || ""}
-                    onChange={(e) => setGraduationYear(Number(e.target.value))}
-                  />
-                </Field>
-              </div>
+                    <Field label="Teaching / Academic Experience (Years)">
+                      <Input
+                        type="number"
+                        min={0}
+                        max={50}
+                        value={academicExperience || ""}
+                        onChange={(e) => setAcademicExperience(Number(e.target.value))}
+                      />
+                    </Field>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Field label="Degree Program">
+                    <Input value={degreeProgram} onChange={(e) => setDegreeProgram(e.target.value)} />
+                  </Field>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="Academic Year (1-6)">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={6}
+                        value={academicYear || ""}
+                        onChange={(e) => setAcademicYear(Number(e.target.value))}
+                      />
+                    </Field>
+
+                    <Field label="Graduation Year">
+                      <Input
+                        type="number"
+                        min={2020}
+                        max={2035}
+                        value={graduationYear || ""}
+                        onChange={(e) => setGraduationYear(Number(e.target.value))}
+                      />
+                    </Field>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -2954,6 +3026,17 @@ export function Profile() {
               <Field label="Curriculum Vitae / Resume URL">
                 <Input value={resumeUrl} onChange={(e) => setResumeUrl(e.target.value)} />
               </Field>
+
+              {isFaculty && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-[#ECE5D8]">
+                  <Field label="Google Scholar Profile URL">
+                    <Input value={googleScholar} onChange={(e) => setGoogleScholar(e.target.value)} placeholder="https://scholar.google.com/citations?user=..." />
+                  </Field>
+                  <Field label="ORCID Identifier">
+                    <Input value={orcid} onChange={(e) => setOrcid(e.target.value)} placeholder="0000-0002-1825-0097" />
+                  </Field>
+                </div>
+              )}
             </div>
           )}
 

@@ -60,6 +60,11 @@ export function Footer() {
                   Academic Dashboard
                 </Link>
               </li>
+              <li>
+                <Link to="/student-guidelines" className="hover:text-[#FAB23D] transition-colors font-medium">
+                  Student Guidelines
+                </Link>
+              </li>
             </ul>
           </div>
 

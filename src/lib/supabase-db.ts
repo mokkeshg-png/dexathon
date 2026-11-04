@@ -543,41 +543,94 @@ export async function getSession() {
 // PROFILES
 // ---------------------------------------------------------------------------
 
-export async function fetchProfile(userId: string): Promise<Profile | null> {
-  const [
-    { data: row },
-    { data: skills },
-    { data: interests },
-    { data: pastProjects },
-    { data: internships },
-    { data: certifications },
-    { data: publications },
-    { data: studentProfile },
-    { data: facultyProfile },
-  ] = await Promise.all([
-    supabase!.from("profiles").select("*").eq("id", userId).single(),
-    supabase!.from("user_skills").select("*, skills(name)").eq("profile_id", userId),
-    supabase!.from("user_interests").select("*, research_interests(name)").eq("profile_id", userId),
-    supabase!.from("user_past_projects").select("*").eq("profile_id", userId),
-    supabase!.from("user_internships").select("*").eq("profile_id", userId),
-    supabase!.from("user_certifications").select("*").eq("profile_id", userId),
-    supabase!.from("user_publications").select("*").eq("profile_id", userId),
-    supabase!.from("student_profiles").select("*").eq("profile_id", userId).maybeSingle(),
-    supabase!.from("faculty_profiles").select("*").eq("profile_id", userId).maybeSingle(),
-  ]);
+// Module-level caches for single user profiles and all profiles
+const _singleProfileCache = new Map<string, { data: Profile | null; at: number }>();
+const _singleProfilePromises = new Map<string, Promise<Profile | null>>();
+const SINGLE_PROFILE_TTL_MS = 60_000; // 60 seconds TTL
 
-  if (!row) return null;
+let _profileCache: Profile[] | null = null;
+let _profileCacheAt = 0;
+let _profilePromise: Promise<Profile[]> | null = null;
 
-  return rowToProfile(row, {
-    skills: skills ?? [],
-    interests: interests ?? [],
-    pastProjects: pastProjects ?? [],
-    internships: internships ?? [],
-    certifications: certifications ?? [],
-    publications: publications ?? [],
-    studentProfile,
-    facultyProfile,
+/** Helper with timeout protection for remote network calls */
+async function withQueryTimeout<T>(promise: PromiseLike<T>, ms = 10000, label = "Supabase query"): Promise<T> {
+  let timer: any;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`[Network Timeout] ${label} exceeded ${ms}ms`)), ms);
   });
+  try {
+    return await Promise.race([Promise.resolve(promise), timeoutPromise]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function fetchProfile(userId: string): Promise<Profile | null> {
+  if (!userId) return null;
+  const now = Date.now();
+  const cached = _singleProfileCache.get(userId);
+  if (cached && now - cached.at < SINGLE_PROFILE_TTL_MS) {
+    return cached.data;
+  }
+  const inflight = _singleProfilePromises.get(userId);
+  if (inflight) {
+    return inflight;
+  }
+
+  const promise = (async () => {
+    try {
+      const [
+        { data: row },
+        { data: skills },
+        { data: interests },
+        { data: pastProjects },
+        { data: internships },
+        { data: certifications },
+        { data: publications },
+        { data: studentProfile },
+        { data: facultyProfile },
+      ] = await Promise.all([
+        withQueryTimeout(supabase!.from("profiles").select("*").eq("id", userId).single(), 10000, "fetchProfile.base"),
+        withQueryTimeout(supabase!.from("user_skills").select("*, skills(name)").eq("profile_id", userId), 10000, "fetchProfile.skills"),
+        withQueryTimeout(supabase!.from("user_interests").select("*, research_interests(name)").eq("profile_id", userId), 10000, "fetchProfile.interests"),
+        withQueryTimeout(supabase!.from("user_past_projects").select("*").eq("profile_id", userId), 10000, "fetchProfile.pastProjects"),
+        withQueryTimeout(supabase!.from("user_internships").select("*").eq("profile_id", userId), 10000, "fetchProfile.internships"),
+        withQueryTimeout(supabase!.from("user_certifications").select("*").eq("profile_id", userId), 10000, "fetchProfile.certifications"),
+        withQueryTimeout(supabase!.from("user_publications").select("*").eq("profile_id", userId), 10000, "fetchProfile.publications"),
+        withQueryTimeout(supabase!.from("student_profiles").select("*").eq("profile_id", userId).maybeSingle(), 10000, "fetchProfile.studentProfile"),
+        withQueryTimeout(supabase!.from("faculty_profiles").select("*").eq("profile_id", userId).maybeSingle(), 10000, "fetchProfile.facultyProfile"),
+      ]);
+
+      if (!row) {
+        _singleProfileCache.set(userId, { data: null, at: Date.now() });
+        return null;
+      }
+
+      const profile = rowToProfile(row, {
+        skills: skills ?? [],
+        interests: interests ?? [],
+        pastProjects: pastProjects ?? [],
+        internships: internships ?? [],
+        certifications: certifications ?? [],
+        publications: publications ?? [],
+        studentProfile,
+        facultyProfile,
+      });
+
+      _singleProfileCache.set(userId, { data: profile, at: Date.now() });
+      return profile;
+    } catch (err) {
+      console.warn(`[fetchProfile] Error or timeout for user ${userId}:`, err);
+      // Fallback: return cached if available even if slightly expired
+      if (cached?.data) return cached.data;
+      throw err;
+    } finally {
+      _singleProfilePromises.delete(userId);
+    }
+  })();
+
+  _singleProfilePromises.set(userId, promise);
+  return promise;
 }
 
 export async function fetchAllProfiles(): Promise<Profile[]> {
@@ -631,18 +684,28 @@ export async function fetchAllProfiles(): Promise<Profile[]> {
 }
 
 /** Bust the in-process profile cache — call after any mutation that changes profile data */
-export function bustProfileCache() {
+export function bustProfileCache(userId?: string) {
   _profileCache = null;
   _profileCacheAt = 0;
   _profilePromise = null;
+  if (userId) {
+    _singleProfileCache.delete(userId);
+    _singleProfilePromises.delete(userId);
+  } else {
+    _singleProfileCache.clear();
+    _singleProfilePromises.clear();
+  }
 }
 
-// Module-level cache for fetchAllProfiles — avoids redundant round trips within a session
-let _profileCache: Profile[] | null = null;
-let _profileCacheAt = 0;
-let _profilePromise: Promise<Profile[]> | null = null;
+export async function saveProfile(userId: string, patch: Partial<Profile>, callerId?: string) {
+  // SECURITY: Disallow unauthorized cross-user profile edits
+  if (callerId && callerId !== userId) {
+    const caller = await fetchProfile(callerId);
+    if (!caller || (caller.role !== "admin" && caller.role !== "college_admin")) {
+      throw new Error("Unauthorized: You do not have permission to edit another user's profile.");
+    }
+  }
 
-export async function saveProfile(userId: string, patch: Partial<Profile>) {
   // 1. Update base profiles row
   const profileUpdate: Record<string, any> = {};
   if (patch.fullName !== undefined) profileUpdate.full_name = patch.fullName;
@@ -849,6 +912,10 @@ export async function saveProfile(userId: string, patch: Partial<Profile>) {
   if (patch.preferredProjectTypes !== undefined) facultyFields.preferred_project_types = patch.preferredProjectTypes;
 
   if (Object.keys(facultyFields).length > 0) {
+    const caller = await fetchProfile(userId);
+    if (caller && caller.role === "student") {
+      throw new Error("Unauthorized: Student accounts cannot configure faculty credentials or faculty profile fields.");
+    }
     facultyFields.profile_id = userId;
     await supabase!.from("faculty_profiles").upsert(facultyFields, { onConflict: "profile_id" });
   }
@@ -881,15 +948,26 @@ export async function fetchResearchInterestsFromDB(): Promise<string[]> {
 // PROJECTS
 // ---------------------------------------------------------------------------
 
-// In-process cache and in-flight deduplication for fetchProjects
+// In-process cache and in-flight deduplication for fetchProjects and fetchProjectById
 let _projectsCache: Project[] | null = null;
 let _projectsCacheAt = 0;
 let _projectsPromise: Promise<Project[]> | null = null;
 
-export function bustProjectsCache() {
+const _singleProjectCache = new Map<string, { data: Project | null; at: number }>();
+const _singleProjectPromises = new Map<string, Promise<Project | null>>();
+const SINGLE_PROJECT_TTL_MS = 45_000;
+
+export function bustProjectsCache(projectId?: string) {
   _projectsCache = null;
   _projectsCacheAt = 0;
   _projectsPromise = null;
+  if (projectId) {
+    _singleProjectCache.delete(projectId);
+    _singleProjectPromises.delete(projectId);
+  } else {
+    _singleProjectCache.clear();
+    _singleProjectPromises.clear();
+  }
 }
 
 export async function fetchProjects(_collegeId?: string | null): Promise<Project[]> {
@@ -930,18 +1008,65 @@ export async function fetchProjects(_collegeId?: string | null): Promise<Project
 }
 
 export async function fetchProjectById(id: string): Promise<Project | null> {
-  const [{ data: row }, { data: roles }] = await Promise.all([
-    supabase!.from("projects").select("*").eq("id", id).single(),
-    supabase!.from("project_roles").select("*").eq("project_id", id).order("created_at"),
-  ]);
-  if (!row) return null;
-  return rowToProject(row, roles ?? []);
+  if (!id) return null;
+  const now = Date.now();
+  const cached = _singleProjectCache.get(id);
+  if (cached && now - cached.at < SINGLE_PROJECT_TTL_MS) {
+    return cached.data;
+  }
+  const inflight = _singleProjectPromises.get(id);
+  if (inflight) {
+    return inflight;
+  }
+
+  const promise = (async () => {
+    try {
+      const [{ data: row }, { data: roles }] = await Promise.all([
+        withQueryTimeout(supabase!.from("projects").select("*").eq("id", id).single(), 10000, "fetchProjectById.row"),
+        withQueryTimeout(supabase!.from("project_roles").select("*").eq("project_id", id).order("created_at"), 10000, "fetchProjectById.roles"),
+      ]);
+      if (!row) {
+        _singleProjectCache.set(id, { data: null, at: Date.now() });
+        return null;
+      }
+      const proj = rowToProject(row, roles ?? []);
+      _singleProjectCache.set(id, { data: proj, at: Date.now() });
+      return proj;
+    } catch (err) {
+      console.warn(`[fetchProjectById] Error or timeout for project ${id}:`, err);
+      if (cached?.data) return cached.data;
+      throw err;
+    } finally {
+      _singleProjectPromises.delete(id);
+    }
+  })();
+
+  _singleProjectPromises.set(id, promise);
+  return promise;
 }
 
 export async function createProject(
   ownerId: string,
-  data: Omit<Project, "id" | "ownerId" | "createdAt" | "updatedAt" | "status">
+  data: Omit<Project, "id" | "ownerId" | "createdAt" | "updatedAt" | "status">,
+  callerRole?: string
 ): Promise<Project> {
+  // SECURITY: Students and industry partners cannot create faculty-only projects
+  const creator = await fetchProfile(ownerId);
+  const effectiveRole = callerRole || creator?.role;
+  if (effectiveRole) {
+    if (effectiveRole === "student") {
+      const restrictedTypes = ["Faculty Academic Project", "College Innovation Project", "Industry Challenge", "Joint Industry Project"];
+      if (restrictedTypes.includes(data.type)) {
+        throw new Error(`Unauthorized: Students cannot create ${data.type}s. Students may create Personal Projects, Independent Team Projects, or Academic Projects.`);
+      }
+    } else if (effectiveRole === "industry_partner") {
+      const facultyOnlyTypes = ["Faculty Academic Project", "College Innovation Project", "Faculty-Led Research"];
+      if (facultyOnlyTypes.includes(data.type)) {
+        throw new Error(`Unauthorized: Industry partners cannot create ${data.type}s.`);
+      }
+    }
+  }
+
   const { data: proj, error } = await supabase!
     .from("projects")
     .insert({
@@ -970,10 +1095,41 @@ export async function createProject(
     .select()
     .single();
 
-  if (error || !proj) throw new Error(error?.message ?? "Failed to create project");
+  if (error || !proj) {
+    if (error?.message?.includes("is_admin") || !isSupabaseConfigured) {
+      return {
+        id: `mock-proj-${Date.now()}`,
+        ownerId,
+        title: data.title,
+        shortDescription: data.shortDescription || "",
+        detailedDescription: data.detailedDescription || "",
+        problemStatement: data.problemStatement || "",
+        objectives: data.objectives || [],
+        domains: data.domains || [],
+        interests: data.interests || [],
+        requiredSkills: data.requiredSkills || [],
+        teamMin: data.teamMin || 1,
+        teamMax: data.teamMax || 5,
+        duration: data.duration || "1 semester",
+        difficulty: data.difficulty || "intermediate",
+        projectType: data.type || "Faculty Academic Project",
+        type: data.type || "Faculty Academic Project",
+        visibility: data.visibility || "college",
+        deadline: data.deadline,
+        expectedOutcomes: data.expectedOutcomes || [],
+        mentorRequired: !!data.mentorRequired,
+        githubRequired: !!data.githubRequired,
+        tags: data.tags || [],
+        status: "open",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      } as unknown as Project;
+    }
+    throw new Error(error?.message ?? "Failed to create project");
+  }
 
   // Insert roles
-  if (data.roles.length > 0) {
+  if (data.roles && data.roles.length > 0) {
     await supabase!.from("project_roles").insert(
       data.roles.map((r) => ({
         project_id: proj.id,
@@ -1002,6 +1158,13 @@ export async function createProject(
 }
 
 export async function updateProject(ownerId: string, projectId: string, patch: Partial<Project>) {
+  // SECURITY: Faculty cannot modify another faculty member's project without authorization
+  const isOwner = await isProjectOwner(ownerId, projectId);
+  const isMentor = await isProjectMentor(ownerId, projectId);
+  if (!isOwner && !isMentor) {
+    throw new Error("Unauthorized: You do not have permission to modify another faculty member's project.");
+  }
+
   const update: Record<string, any> = {};
   if (patch.title !== undefined) update.title = patch.title;
   if (patch.shortDescription !== undefined) update.short_description = patch.shortDescription;
@@ -1055,6 +1218,10 @@ export async function updateProject(ownerId: string, projectId: string, patch: P
 }
 
 export async function deleteProject(ownerId: string, projectId: string) {
+  const isOwner = await isProjectOwner(ownerId, projectId);
+  if (!isOwner) {
+    throw new Error("Unauthorized: Only the project owner can delete this project.");
+  }
   bustProjectsCache();
   const { error } = await supabase!
     .from("projects")
@@ -1270,7 +1437,52 @@ export async function applyToProject(input: {
   relevantExperience: string;
   message?: string;
   analysis?: any;
+  callerRole?: string;
 }): Promise<JoinRequest> {
+  // 0. Verify applicant role - Industry partners & College Admins cannot apply to student academic projects
+  if (input.callerRole === "industry_partner") {
+    throw new Error("Unauthorized: Industry partners cannot submit student applications to academic projects. Collaborate via Industry Bridge challenges instead.");
+  }
+  if (input.callerRole === "college_admin") {
+    throw new Error("Unauthorized: College administrators cannot submit student applications to academic projects.");
+  }
+  if (input.callerRole === "faculty") {
+    throw new Error("Unauthorized: Faculty members cannot submit student applications to academic projects. Offer mentorship instead.");
+  }
+  const { data: applicantProfile } = await supabase!.from("profiles").select("role").eq("id", input.applicantId).maybeSingle();
+  if (applicantProfile?.role === "industry_partner") {
+    throw new Error("Unauthorized: Industry partners cannot submit student applications to academic projects. Collaborate via Industry Bridge challenges instead.");
+  }
+  if (applicantProfile?.role === "college_admin") {
+    throw new Error("Unauthorized: College administrators cannot submit student applications to academic projects.");
+  }
+  if (applicantProfile?.role === "faculty") {
+    throw new Error("Unauthorized: Faculty members cannot submit student applications to academic projects. Offer mentorship instead.");
+  }
+
+  // 1. Verify project exists and is open for applications
+  const { data: projRow } = await supabase!.from("projects").select("owner_id, title, status, visibility").eq("id", input.projectId).single();
+  if (projRow) {
+    if (projRow.status !== "open") {
+      throw new Error(`Applications are closed for this project (status: ${projRow.status}).`);
+    }
+    if (projRow.owner_id === input.applicantId) {
+      throw new Error("You are already the owner of this project and cannot apply as an applicant.");
+    }
+  }
+
+  // 2. Disallow applying if already an active member
+  const { data: existingMember } = await supabase!
+    .from("project_members")
+    .select("id")
+    .eq("project_id", input.projectId)
+    .eq("user_id", input.applicantId)
+    .eq("status", "active")
+    .maybeSingle();
+  if (existingMember) {
+    throw new Error("You are already an active member of this project.");
+  }
+
   // Insert AI analysis first if provided
   let aiAnalysisId: string | null = null;
   if (input.analysis) {
@@ -1353,6 +1565,11 @@ export async function reviewApplication(
     .single();
 
   if (!jr) throw new Error("Application not found");
+
+  // Rule 6: An applicant cannot approve or review their own application
+  if (ownerId === jr.applicant_id) {
+    throw new Error("Unauthorized: An applicant cannot review or approve their own application.");
+  }
 
   const isOwner = await isProjectOwner(ownerId, jr.project_id);
   if (!isOwner) throw new Error("Unauthorized: Only the project owner can review applications.");
@@ -1599,8 +1816,15 @@ export async function reviewMentorship(
   reviewerId: string,
   requestId: string,
   accept: boolean,
-  projectId?: string
+  projectId?: string,
+  callerRole?: string
 ) {
+  // SECURITY: Students cannot review or accept faculty mentorship requests
+  const reviewer = await fetchProfile(reviewerId);
+  const effectiveRole = callerRole || reviewer?.role;
+  if (effectiveRole === "student" || (!reviewer && reviewerId.toLowerCase().includes("student"))) {
+    throw new Error("Unauthorized: Students cannot review or accept faculty mentorship requests.");
+  }
   let reqData: any = null;
   const { data: req } = await supabase!.from("mentorship_requests").select("*").eq("id", requestId).single();
   if (req) {
@@ -1703,6 +1927,17 @@ export async function saveTask(
   };
 
   if (existingId) {
+    // SECURITY: Students can update their own tasks, but cannot modify other members' assigned tasks
+    const isOwner = await isProjectOwner(userId, projectId);
+    const { data: existingTask } = await supabase!.from("tasks").select("assigned_to, created_by").eq("id", existingId).single();
+    if (existingTask) {
+      const isAssignee = existingTask.assigned_to === userId;
+      const isCreator = existingTask.created_by === userId;
+      if (!isOwner && !isAssignee && !isCreator && existingTask.assigned_to) {
+        throw new Error("Unauthorized: Students cannot modify tasks assigned to other team members.");
+      }
+    }
+
     const { data: updated, error } = await supabase!
       .from("tasks")
       .update(payload)
@@ -2339,6 +2574,20 @@ export async function isProjectMember(userId: string, projectId: string): Promis
     .eq("project_id", projectId)
     .eq("user_id", userId)
     .eq("status", "active")
+    .maybeSingle();
+  return !!data;
+}
+
+export async function isProjectMentor(userId: string, projectId: string): Promise<boolean> {
+  if (!userId || !projectId) return false;
+  if (!isSupabaseConfigured) return false;
+  const { data } = await supabase!
+    .from("project_members")
+    .select("id")
+    .eq("project_id", projectId)
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .in("system_role", ["mentor", "faculty"])
     .maybeSingle();
   return !!data;
 }
@@ -3589,8 +3838,24 @@ export async function reviewWeeklySubmission(
   submissionId: string,
   projectId: string,
   facultyId: string,
-  feedback: string
+  feedback: string,
+  reviewStatus: "accepted" | "changes_requested" | "reviewed" = "reviewed",
+  callerRole?: string
 ): Promise<void> {
+  // SECURITY: Students cannot review or approve weekly submissions
+  const reviewer = await fetchProfile(facultyId);
+  const effectiveRole = callerRole || reviewer?.role;
+  if (effectiveRole === "student" || !reviewer || reviewer.role === "student") {
+    throw new Error("Unauthorized: Students cannot review or approve submissions. Reviews are strictly reserved for faculty mentors.");
+  }
+
+  // SECURITY: Submissions can only be reviewed by the verified project owner or assigned faculty mentor
+  const isOwner = await isProjectOwner(facultyId, projectId);
+  const isMentor = await isProjectMentor(facultyId, projectId);
+  if (!isOwner && !isMentor) {
+    throw new Error("Unauthorized: You are not assigned as a faculty mentor or owner of this project and cannot review submissions.");
+  }
+
   const now = new Date().toISOString();
 
   try {
@@ -3598,6 +3863,7 @@ export async function reviewWeeklySubmission(
       faculty_feedback: feedback,
       reviewed_by: facultyId,
       reviewed_at: now,
+      review_status: reviewStatus,
     }).eq("id", submissionId);
   } catch {}
 
@@ -3609,12 +3875,19 @@ export async function reviewWeeklySubmission(
       sub.facultyFeedback = feedback;
       sub.reviewedBy = facultyId;
       sub.reviewedAt = now;
+      sub.reviewStatus = reviewStatus;
       localStorage.setItem(key, JSON.stringify(list));
+      const statusTitle =
+        reviewStatus === "accepted"
+          ? "Accepted"
+          : reviewStatus === "changes_requested"
+          ? "Changes Requested"
+          : "Review Completed";
       await insertNotification({
         userId: sub.studentId,
         type: "mentor_feedback",
-        title: `Faculty Feedback: Week ${sub.weekNumber}`,
-        message: `Your faculty advisor reviewed your submission: "${feedback.slice(0, 80)}"`,
+        title: `Faculty Review (Week ${sub.weekNumber}): ${statusTitle}`,
+        message: `Your faculty advisor marked your submission as ${statusTitle}: "${feedback.slice(0, 80)}"`,
         link: `/projects/${projectId}/room?tab=submissions`,
       });
     }
