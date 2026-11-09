@@ -17,9 +17,5 @@ verify_jwt = true
 import_map = "./functions/ai-navigation/deno.json"
 entrypoint = "./functions/ai-navigation/index.ts"
 
-[functions.setup-rls-fixes]
-enabled = false
-verify_jwt = false
-entrypoint = "./functions/setup-rls-fixes/index.ts"
 
 
